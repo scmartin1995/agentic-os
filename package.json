@@ -1,0 +1,42 @@
+{
+  "name": "agentic-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agentic OS: a desktop shell for working with an AI assistant out of a folder of notes. A base to build your own on.",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "node tools/build.cjs",
+    "start": "npm run build && electron .",
+    "start:fullscreen": "npm run build && electron . --fullscreen",
+    "capture": "npm run build && electron . --disable-gpu --capture=capture.png",
+    "typecheck": "tsc --noEmit",
+    "login": "node tools/login.cjs",
+    "test": "node tools/test-policy.cjs && node tools/test-store.cjs && node tools/test-actions.cjs && node tools/test-discord.cjs && electron tools/test-recovery.cjs && electron tools/test-claude.cjs && electron tools/test-v2.cjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.289",
+    "@fontsource-variable/geist": "^5.2.5",
+    "@fontsource-variable/geist-mono": "^5.2.5",
+    "3d-force-graph": "^1.80.1",
+    "discord.js": "^14.27.0",
+    "dompurify": "^3.4.16",
+    "marked": "^18.0.14",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "three": "^0.186.1",
+    "vosk-browser": "^0.0.8"
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.0.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.5.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-next*/
+dist-prev/
+.env
+.env.local
+capture*.png
+aos-debug.log
+tools/piper/
+tools/whisper/
+tools/models/

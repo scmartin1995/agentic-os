@@ -1,5 +1,11 @@
 # Agentic OS
 
+## Windows or Mac?
+
+**This branch (`mac`) is the Mac app.** The Windows app is on the **`main`** branch: on the repo page, open the branch
+menu above the file list (it says `mac`), pick `main`, then Code > Download ZIP. Or `git clone <repo address>` with no
+branch named. Same features in both; this branch adds the Mac packaging, start script and Mac-only safety rules.
+
 Version 1.1.1. A light desktop workspace for working with Claude: chat, your notes and projects (each project's deliverables
 as tiles), and skills that improve with use. Calm paper colours (light, with a warm dark), IBM Plex type, and nothing
 moving on screen unless the assistant is working.

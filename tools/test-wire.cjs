@@ -15,7 +15,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-wire-test-'));
 app.setPath('userData', path.join(tmp, 'userData'));
 process.env.AOS_VAULT = path.join(tmp, 'notes');
 fs.mkdirSync(process.env.AOS_VAULT, { recursive: true });
-for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'AWS_PROFILE', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_BEARER_TOKEN_BEDROCK']) delete process.env[k];
+for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']) delete process.env[k];
 
 // Anything printed in a failure is masked: only the first characters of a credential are ever shown.
 const mask = (seen) => JSON.stringify(seen.map((s) => ({ ...s, auth: String(s.auth).replace(/(Bearer\s+\S{3})\S*/, '$1…'), apiKey: s.apiKey ? '…' : '' })));
@@ -30,7 +30,7 @@ function standIn() {
     req.on('data', (d) => { body += d; });
     req.on('end', () => {
       let j = null; try { j = JSON.parse(body); } catch { /* not JSON */ }
-      seen.push({ method: req.method, url: req.url, auth: req.headers.authorization || '', apiKey: req.headers['x-api-key'] || '', signed: !!req.headers['x-amz-date'] || /AWS4-HMAC/.test(req.headers.authorization || ''), model: j && j.model });
+      seen.push({ method: req.method, url: req.url, auth: req.headers.authorization || '', apiKey: req.headers['x-api-key'] || '', model: j && j.model });
       res.writeHead(400, { 'content-type': 'application/json' }); res.end('{"message":"stand-in: stop here"}');
     });
   });
@@ -49,46 +49,27 @@ async function runEngine(claude, model) {
 app.whenReady().then(async () => {
   try {
     const providers = require('../electron/providers.cjs');
-    const settings = require('../electron/settings.cjs');
     const claude = require('../electron/claude.cjs');
-    const PINS = { light: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', standard: 'us.anthropic.claude-sonnet-4-6', strong: 'us.anthropic.claude-opus-4-8' };
 
-    // 1. an Amazon Bedrock gateway, a gateway token
+    // 1. a gateway in Anthropic's own format: the model in the request body is the pinned name
     let g = standIn(); let base = await g.start();
-    providers.save({ id: 'claude', method: 'key', key: 'tok-wire-1234', baseUrl: base, models: PINS, gateway: { style: 'bedrock', keyVar: 'ANTHROPIC_AUTH_TOKEN', region: 'us-east-1' } });
+    providers.save({ id: 'claude', method: 'key', key: 'tok-wire-1234', baseUrl: base, models: { light: 'gw-quick', standard: 'gw-everyday', strong: 'gw-hard' } });
     await runEngine(claude, claude.SONNET);
-    let calls = g.seen.filter((s) => /invoke/.test(s.url));
-    check('wire, Bedrock gateway with a token: the real request goes to the model name that was pinned', calls.length > 0 && calls.every((c) => c.url === '/model/' + PINS.standard + '/invoke-with-response-stream'), mask(g.seen));
-    check('wire, Bedrock gateway with a token: the key is sent as a bearer token and nothing is signed with AWS', calls.length > 0 && calls.every((c) => c.auth === 'Bearer tok-wire-1234' && !c.signed), mask(calls));
-    check('wire, Bedrock gateway with a token: no startup probes of other models', g.seen.filter((s) => /invoke/.test(s.url)).every((c) => c.url.includes(PINS.standard)), JSON.stringify(g.seen.map((s) => s.url)));
-    g.srv.close();
-
-    // 2. an Amazon Bedrock gateway, a Bedrock API key (AWS_BEARER_TOKEN_BEDROCK)
-    g = standIn(); base = await g.start();
-    providers.save({ id: 'claude', method: 'key', key: 'bk-wire-5678', baseUrl: base, models: PINS, gateway: { style: 'bedrock', keyVar: 'AWS_BEARER_TOKEN_BEDROCK', region: 'us-east-1' } });
-    await runEngine(claude, claude.SONNET);
-    calls = g.seen.filter((s) => /invoke/.test(s.url));
-    check('wire, Bedrock gateway with a Bedrock API key: pinned model, key as a bearer token, nothing signed', calls.length > 0 && calls.every((c) => c.url === '/model/' + PINS.standard + '/invoke-with-response-stream' && c.auth === 'Bearer bk-wire-5678' && !c.signed), mask(g.seen));
-    g.srv.close();
-
-    // 3. the quick tier with no quick model pinned uses the everyday one
-    g = standIn(); base = await g.start();
-    providers.save({ id: 'claude', method: 'key', key: 'tok-wire-1234', baseUrl: base, models: { light: '', standard: PINS.standard, strong: '' }, gateway: { style: 'bedrock', keyVar: 'ANTHROPIC_AUTH_TOKEN' } });
-    await runEngine(claude, claude.HAIKU);
-    calls = g.seen.filter((s) => /invoke/.test(s.url));
-    check('wire, Bedrock gateway: a quick question with no quick model pinned goes to the everyday model, not to one the account may lack', calls.length > 0 && calls.every((c) => c.url.includes(PINS.standard)), JSON.stringify(g.seen.map((s) => s.url)));
-    g.srv.close();
-
-    // 4. a gateway in Anthropic's own format: the model in the request body is the pinned name
-    g = standIn(); base = await g.start();
-    providers.save({ id: 'claude', method: 'key', key: 'tok-wire-1234', baseUrl: base, models: { light: 'gw-quick', standard: 'gw-everyday', strong: 'gw-hard' }, gateway: { style: 'anthropic' } });
-    await runEngine(claude, claude.SONNET);
-    calls = g.seen.filter((s) => /\/v1\/messages/.test(s.url));
-    check('wire, Anthropic-format gateway: the model in the request is the pinned name, key as a bearer token', calls.length > 0 && calls.every((c) => c.model === 'gw-everyday' && c.auth === 'Bearer tok-wire-1234'), mask(g.seen));
+    let calls = g.seen.filter((s) => /\/v1\/messages/.test(s.url));
+    check('wire, gateway: the model in the request is the pinned name, key as a bearer token', calls.length > 0 && calls.every((c) => c.model === 'gw-everyday' && c.auth === 'Bearer tok-wire-1234'), mask(g.seen));
     check('wire: with a key or a gateway the engine is given its own empty config folder, so a Claude login on this PC is never sent anywhere', /engine-home$/.test(claude.authEnv().CLAUDE_CONFIG_DIR || ''));
+    g.srv.close();
+
+    // 2. the quick tier with no quick model pinned uses the everyday one
+    g = standIn(); base = await g.start();
+    providers.save({ id: 'claude', method: 'key', key: 'tok-wire-1234', baseUrl: base, models: { light: '', standard: 'gw-everyday', strong: '' } });
+    await runEngine(claude, claude.HAIKU);
+    calls = g.seen.filter((s) => /\/v1\/messages/.test(s.url));
+    check('wire, gateway: a quick question with no quick model pinned goes to the everyday model, not to one the account may lack', calls.length > 0 && calls.every((c) => c.model === 'gw-everyday'), JSON.stringify(g.seen.map((s) => s.model)));
+    g.srv.close();
+
     providers.save({ id: 'claude', method: 'subscription' });
     check('wire: on the Claude plan sign-in the engine uses the normal config folder, where that login is', claude.authEnv().CLAUDE_CONFIG_DIR === undefined || claude.authEnv().CLAUDE_CONFIG_DIR === process.env.CLAUDE_CONFIG_DIR);
-    g.srv.close();
   } catch (err) {
     failed++;
     console.log('FAIL  the test run itself broke:', err && err.stack ? err.stack : err);

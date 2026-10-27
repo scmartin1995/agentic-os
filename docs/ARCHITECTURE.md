@@ -32,7 +32,7 @@ doing" pass), Health and Value panels, a token dashboard, Connectors, and Settin
 
 Agentic OS has **no server, no account and no listening network port** of its own. Everything it keeps is in the user's app-data folder
 and in the notes folder. The only network traffic is what the Claude engine sends to the connection the user configured (Anthropic,
-or the organisation's gateway, which may front Amazon Bedrock), plus a few small, listed exceptions (see SECURITY.md).
+or the organisation's gateway in Anthropic's API format), plus a few small, listed exceptions (see SECURITY.md).
 
 Not a goal: any AI other than Claude (removed), a phone link (removed), Discord (stand-in only), Mac packaging done by hand.
 
@@ -46,7 +46,7 @@ electron/            main process (Node). Every file here is CommonJS (.cjs)
   engine.cjs         thin facade over claude.cjs (one set of calls for main.cjs)
   claude.cjs         THE ENGINE: chats, model choice, prompts, tools, helpers, approvals, events, auth environment
   providers.cjs      connection settings: test, save, import from Claude Code settings, sign-in status
-  gateway.cjs        gateway/Bedrock rules: reading ~/.claude/settings.json, the engine's environment, plain error text
+  gateway.cjs        gateway rules: reading ~/.claude/settings.json, the engine's environment, plain error text
   platform.cjs       everything that differs Windows vs Mac (engine program path, sign-in window, menu, voice program names)
   policy.cjs         the SAFETY GATE: what asks the user, what runs, what is backed up first
   shared.cjs         approval cards waiting for an answer, "yes to all edits", files Agentic OS wrote itself
@@ -215,14 +215,13 @@ Rules: a new feature adds an `h(...)` in `main.cjs` **and** a wrapper in `src/ao
 
 ## 8. Connection modes (the area most likely to need fixes)
 
-Settings > Brain. Saved in `settings.provider`: `{ id:'claude', method:'subscription'|'key', baseUrl, models:{light,standard,strong}, keyHeader, gateway:{ style, keyVar, skipAuth, region, disableBetas, certFile, extraEnv, modelOverrides } }`. Secrets: `key:claude`, `headers:claude`.
+Settings > Brain. Saved in `settings.provider`: `{ id:'claude', method:'subscription'|'key', baseUrl, models:{light,standard,strong}, keyHeader, gateway:{ disableBetas, certFile } }`. Secrets: `key:claude`, `headers:claude`.
 
 | Mode | When | Engine environment (`claude.authEnv()`) |
 |---|---|---|
 | Claude plan | `method:'subscription'` | normal config folder (the user's Claude login); routing variables scrubbed; `mode()` = `plan`; plan windows via `limits` |
 | Anthropic key | `method:'key'`, no address | `ANTHROPIC_API_KEY`; `CLAUDE_CONFIG_DIR` = the assistant's empty `engine-home`; `mode()` = `api` |
-| Gateway, Anthropic format | `method:'key'` + address | `ANTHROPIC_BASE_URL`, key as `ANTHROPIC_AUTH_TOKEN` (bearer) or `ANTHROPIC_API_KEY` (`x-api-key`) chosen by the probe, `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`, model pins, headers, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, `NODE_EXTRA_CA_CERTS`; empty `engine-home` |
-| Gateway, Amazon Bedrock format | `gateway.style:'bedrock'` | `CLAUDE_CODE_USE_BEDROCK=1`, `ANTHROPIC_BEDROCK_BASE_URL`, `CLAUDE_CODE_SKIP_BEDROCK_AUTH=1` (always), key in `ANTHROPIC_AUTH_TOKEN` or `AWS_BEARER_TOKEN_BEDROCK` (`gateway.keyVar`), `AWS_REGION`, allowlisted extras; empty `engine-home`; `modelOverrides` via engine settings |
+| Gateway (Anthropic API format) | `method:'key'` + address | `ANTHROPIC_BASE_URL`, key as `ANTHROPIC_AUTH_TOKEN` (bearer) or `ANTHROPIC_API_KEY` (`x-api-key`) chosen by the probe, `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`, model pins, headers, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, `NODE_EXTRA_CA_CERTS`; empty `engine-home` |
 
 Always (every mode): `DISABLE_AUTOUPDATER, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, DISABLE_TELEMETRY, DISABLE_ERROR_REPORTING,
 DISABLE_FEEDBACK_COMMAND, CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY, CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL`; settings
@@ -233,12 +232,10 @@ Facts established by running the real engine against a stand-in gateway (`tools/
    key. Hence `CLAUDE_CONFIG_DIR` = `engine-home` whenever a key or gateway is used.
 2. Asking for an exact version (`claude-sonnet-5-5`) ignores the model names pinned via `ANTHROPIC_DEFAULT_*_MODEL`. Hence
    `engineModel()` hands over `haiku|sonnet|opus`.
-3. Without `CLAUDE_CODE_SKIP_BEDROCK_AUTH` the engine sends about a dozen model-availability probes at the gateway on every start.
-4. Settings `skipWebFetchPreflight` stops a web fetch from first calling Anthropic.
+3. Settings `skipWebFetchPreflight` stops a web fetch from first calling Anthropic.
 
 Connect-screen checks (`providers.test`/`testGateway`): use Chromium's network stack (`net.fetch`) so the PC's certificates and proxy
-apply; Anthropic style tries `GET /v1/models` with bearer then `x-api-key`, falling back to a one-token `POST /v1/messages`; Bedrock style
-sends a one-token `POST /model/<pinned or guessed>/invoke`. Outcomes are one of: unreachable, cert, refused, shape, notGateway, other
+apply; they try `GET /v1/models` with bearer then `x-api-key`, falling back to a one-token `POST /v1/messages`. Outcomes are one of: unreachable, cert, refused, shape, notGateway, other
 (`gateway.TEXT` holds the user-facing wording; `friendlyError()` maps engine errors to the same words).
 
 Import: `providers.importSettings()` reads `~/.claude/settings.json` (never writes), keeps secrets in main-process memory
@@ -282,9 +279,9 @@ Import: `providers.importSettings()` reads `~/.claude/settings.json` (never writ
 
 | Command | Covers |
 |---|---|
-| `npm test` | `tools/test-policy.cjs` (safety gate, incl. pretend-Mac cases), `tools/test-platform.cjs` (Windows/Mac differences), `tools/test-v2.cjs` (settings, secrets, gateway both styles, settings import, plain errors, Bedrock import, model aliases, vault switching) |
+| `npm test` | `tools/test-policy.cjs` (safety gate, incl. pretend-Mac cases), `tools/test-platform.cjs` (Windows/Mac differences), `tools/test-v2.cjs` (settings, secrets, gateway, settings import, plain errors, model aliases, vault switching) |
 | `node_modules/.bin/electron tools/test-recovery.cjs` | the window never stays black |
-| `npm run test:wire` | the REAL engine against a stand-in gateway: pinned model name, key header, no AWS signing, no login token sent |
+| `npm run test:wire` | the REAL engine against a stand-in gateway: pinned model name, key header, no login token sent |
 | `npm run test:window` | window buttons for a Windows and a Mac layout; maximise/restore/minimise/close |
 
 - Not covered by any test: the Claude chat loop end-to-end (needs tokens), the approval card through the real engine, edits/backups
@@ -305,8 +302,7 @@ Import: `providers.importSettings()` reads `~/.claude/settings.json` (never writ
 1. **The gate is the only door for risky tools.** `canUseTool` → `policy.check`. `allowedTools` skips the gate, so it may only hold
    tools that cannot change anything on the PC (note `WebFetch`/`WebSearch` are there: see SECURITY.md S-2). Helpers must keep going through the same gate.
 2. **Key/gateway means an isolated engine config** (`CLAUDE_CONFIG_DIR=engine-home`) and a scrubbed environment (`ROUTING_VARS`).
-3. **Bedrock style always skips AWS signing**; Agentic OS never signs with AWS credentials.
-4. **Model names through a gateway are the plain tiers** (`engineModel`), with `sonnet` as the fallback.
+3. **Model names through a gateway are the plain tiers** (`engineModel`), with `sonnet` as the fallback.
 5. **`systemAppend` is stable within a session**; changing content goes through `questionContext`.
 6. **No secret reaches the page.** `providers.state()`, import descriptions and `settings.hint` return only "saved" and last 4
    characters; header values and the key stay in the main process. Test output must never print credentials (`test-wire.cjs` masks them).
@@ -323,7 +319,7 @@ Import: `providers.importSettings()` reads `~/.claude/settings.json` (never writ
 |---|---|
 | Answers fail through a gateway with a 400 mentioning "Extra inputs" / "context_management" | `gateway.friendlyError`, Settings > Advanced "rejects some requests" → `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` in `applyToEnv` |
 | Wrong or unavailable model name | `engineModel`, `helperDefs`, `gatewayCfg().models`, pins in `providers.save`; `test-wire.cjs` |
-| 401/403 from the gateway | key header choice (`providers.testGateway`, `settings.provider.keyHeader`), `gateway.keyVar`, extra headers secret |
+| 401/403 from the gateway | key header choice (`providers.testGateway`, `settings.provider.keyHeader`), extra headers secret |
 | Certificate error | `NODE_EXTRA_CA_CERTS` (`gateway.certFile`); probe uses Chromium trust, the engine uses its own |
 | A card never appears / action runs without asking | `claude.cjs canUseTool`, `policy.check`, `allowedTools`, `shared.ask` |
 | A delete asks every time (or does not ask) | `policy.deleteCheck`, `absPath`, platform flavour, `REGENERATED` |

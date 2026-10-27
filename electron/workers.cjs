@@ -17,9 +17,9 @@ const vault = require('./vault.cjs');
 const policy = require('./policy.cjs');
 
 const DAY = 24 * 3600 * 1000;
-const DEFAULT_BASE = 'https://api.servicesessentials.ibm.com/v1';
+const DEFAULT_BASE = '';
 const RUN_LIMIT_MS = 15 * 60 * 1000;
-const KEY_VAR = 'ICA_WORKER_KEY';
+const KEY_VAR = 'AOS_WORKER_KEY';
 
 // kind: 'agent' acts on files in a scratch folder; 'model' (later) is one prompt in, one answer out.
 const CATALOG = [
@@ -153,9 +153,9 @@ function tomlStr(s) { return JSON.stringify(String(s)); } // a JSON string is a 
 function codexConfig(base, it) {
   return [
     it.model ? `model = ${tomlStr(it.model)}` : '',
-    'model_provider = "ica"',
-    '[model_providers.ica]',
-    'name = "IBM gateway"',
+    'model_provider = "gateway"',
+    '[model_providers.gateway]',
+    'name = "Gateway"',
     `base_url = ${tomlStr(base)}`,
     `env_key = ${tomlStr(KEY_VAR)}`,
     `wire_api = ${tomlStr(it.wireApi || 'responses')}`,

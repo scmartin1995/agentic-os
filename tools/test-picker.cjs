@@ -43,7 +43,7 @@ app.whenReady().then(async () => {
   try {
     fs.writeFileSync(path.join(tmp, 'settings.json'), JSON.stringify({
       onboarded: true,
-      provider: { id: 'claude', method: 'key', baseUrl: base, models: { light: 'claude-sonnet-5-5', standard: 'claude-sonnet-5-5', strong: 'claude-advantage-assist' }, keyHeader: 'bearer', gateway: { style: 'anthropic', disableBetas: false, certFile: '', keyVar: 'ANTHROPIC_AUTH_TOKEN', skipAuth: true, region: '', extraEnv: {}, modelOverrides: {} } },
+      provider: { id: 'claude', method: 'key', baseUrl: base, models: { light: 'claude-sonnet-5-5', standard: 'claude-sonnet-5-5', strong: 'claude-advantage-assist' }, keyHeader: 'bearer', gateway: { disableBetas: false, certFile: '' } },
     }));
     const claude = require('../electron/claude.cjs');
     await claude.refreshGatewayModels(true);

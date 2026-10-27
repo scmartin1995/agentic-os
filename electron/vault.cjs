@@ -51,7 +51,7 @@ function tree() {
 // Where projects live. With a projects/ folder (the OKF layout), each folder inside it is a project, as-is. Without
 // one (a plain folder of folders, an Obsidian vault), each top-level folder is a project, apart from the assistant's own and
 // the usual non-project folders below — unless that top-level folder isn't itself OKF-structured (no Client
-// Facing/Raw/Records/Sessions/Tools of its own) but a direct child of it is (e.g. Lumen/Database Team): that child is
+// Facing/Raw/Records/Sessions/Tools of its own) but a direct child of it is (e.g. Acme/Platform Team): that child is
 // promoted to a project in its own right, named for itself, and the parent folder is not also listed. base is '' in
 // the top-level case, so a plain project's path is just its name; a promoted project's path carries the extra segment
 // and its breadcrumb says so.

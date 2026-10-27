@@ -19,7 +19,7 @@ the code, not exercised). It was written from the code of 2026-10-06. Companions
 
 1. Agentic OS is a single-user desktop app (Electron). It runs **no server and opens no network port**.
 2. All model traffic is made by the **Claude Code engine** (a vendor program Agentic OS starts), to the connection the user configured:
-   Anthropic, or the organisation's **gateway** (Anthropic format or Amazon Bedrock format).
+   Anthropic, or the organisation's **gateway** (Anthropic API format).
 3. The page (UI) is sandboxed with no Node; it reaches the main process only through a fixed list of IPC calls (about 60).
 4. The model can **read any file the user can** and **fetch any web page** without asking. Changes to files and commands go through a
    **denylist gate** that asks only for catastrophic actions and backs up what it deletes or overwrites.
@@ -73,7 +73,7 @@ flowchart LR
     FS3[("Claude Code config folder\nsession logs, login (plan mode)")]
   end
   subgraph NET["TB3: network"]
-    GW["Model connection\nAnthropic API  or  org gateway (-> Bedrock)"]
+    GW["Model connection\nAnthropic API  or  org gateway"]
     WEB["Any web site\n(model-directed fetch/search)"]
     CON["claude.ai connectors\n(plan mode, on demand)"]
     CDN["cdn.jsdelivr.net\n(connector logos)"]
@@ -147,7 +147,7 @@ or in the app-data folder**. Whoever can write there can set the key Agentic OS 
 
 | # | From | To | When | Carries | Controllable? |
 |---|---|---|---|---|---|
-| N-1 | Claude Code program | Anthropic API, or the gateway address (Bedrock path `/model/<id>/invoke[-with-response-stream]` or Anthropic path `/v1/messages`); also `GET /v1/models` (discovery), `GET /inference-profiles`, `HEAD /api/hello` | every question, and engine start | prompts, vault index pages (up to 6000 chars each), file contents the model reads, tool results, attachments' contents when read | the connection choice |
+| N-1 | Claude Code program | Anthropic API, or the gateway address (`/v1/messages`); also `GET /v1/models` (discovery), `HEAD /api/hello` | every question, and engine start | prompts, vault index pages (up to 6000 chars each), file contents the model reads, tool results, attachments' contents when read | the connection choice |
 | N-2 | Claude Code program (`WebFetch`, `WebSearch`) | any site / search service | model's choice; **no approval** | whatever the model puts in the request | no switch in Agentic OS (S-2) |
 | N-3 | Claude Code program | claude.ai connectors (Gmail, Drive, etc.) | plan mode only, after the model calls `use_connectors`; Connectors setting `Only when needed / Every chat / Never` | connector tool calls | yes (Connectors panel) |
 | N-4 | main process | the gateway address, or `api.anthropic.com/v1/models` | when the user presses Check/Use, or applies an import | the key and extra headers (to that address only) | user-triggered |
@@ -187,8 +187,8 @@ output masks credentials; Agentic OS never writes the key to logs or the ledger.
 
 **Verified credential isolation (wire test):** with a Claude login present on the PC, an Anthropic-format gateway received that login's
 OAuth token instead of the gateway key, until the engine was given its own empty config folder. In key/gateway modes
-`CLAUDE_CONFIG_DIR=<userData>/engine-home`; in plan mode the normal folder is used. Also `ROUTING_VARS` (Anthropic, AWS Bedrock, Vertex,
-Foundry, model-pin, region, cert variables) are deleted from the engine's inherited environment before the assistant's own are set.
+`CLAUDE_CONFIG_DIR=<userData>/engine-home`; in plan mode the normal folder is used. Also `ROUTING_VARS` (Anthropic, cloud-provider, model-pin,
+region, cert variables) are deleted from the engine's inherited environment before the assistant's own are set.
 
 ## 8. Authorisation model for the model's actions
 
@@ -293,7 +293,7 @@ so the browser's Permissions Policy should refuse it, but this was not tested.
 | Control | Check |
 |---|---|
 | No credential in the page | `test-v2.cjs` (hint only; import never shows key/header values) |
-| Key header, pinned model, no AWS signing, no probes | `test-wire.cjs` against a stand-in gateway, both formats |
+| Key header, pinned model, no login token | `test-wire.cjs` against a stand-in gateway |
 | Personal login not sent to a gateway | `test-wire.cjs` (engine-home isolation; verified failing before the fix) |
 | Safety gate rules (Windows and pretend-Mac) | `test-policy.cjs` (28 checks) |
 | Backups before edits/deletes | `test-policy.cjs` (queued backups, `backupAny`) |

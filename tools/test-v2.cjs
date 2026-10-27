@@ -93,31 +93,12 @@ app.whenReady().then(async () => {
       check('gateway: the key is refused as a header (it belongs in the key box)', !r.ok && /key box/.test(r.error), JSON.stringify(r));
       P.save({ id: 'claude', method: 'key', key: 'tok-1', baseUrl: bBase, models: { light: 'claude-haiku-g', standard: 'claude-sonnet-g', strong: 'claude-opus-g' }, gateway: { style: 'anthropic', headers: 'X-Org: blue\nX-Team: red', disableBetas: true, certFile: 'C:\\certs\\root.pem' } });
       let env = claudeCjs.authEnv();
-      check('gateway (Anthropic style): the engine gets the address, the token, headers, the rejects-requests switch, the certificate file and the model pins', env.ANTHROPIC_BASE_URL === bBase && env.ANTHROPIC_AUTH_TOKEN === 'tok-1' && !env.ANTHROPIC_API_KEY && env.ANTHROPIC_CUSTOM_HEADERS === 'X-Org: blue\nX-Team: red' && env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS === '1' && env.NODE_EXTRA_CA_CERTS === 'C:\\certs\\root.pem' && env.ANTHROPIC_DEFAULT_OPUS_MODEL === 'claude-opus-g' && !env.CLAUDE_CODE_USE_BEDROCK, JSON.stringify(Object.keys(env).filter((k) => /ANTHROPIC|CLAUDE_CODE_(USE|SKIP|DISABLE_EXP)/.test(k))));
+      check('gateway (Anthropic style): the engine gets the address, the token, headers, the rejects-requests switch, the certificate file and the model pins', env.ANTHROPIC_BASE_URL === bBase && env.ANTHROPIC_AUTH_TOKEN === 'tok-1' && !env.ANTHROPIC_API_KEY && env.ANTHROPIC_CUSTOM_HEADERS === 'X-Org: blue\nX-Team: red' && env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS === '1' && env.NODE_EXTRA_CA_CERTS === 'C:\\certs\\root.pem' && env.ANTHROPIC_DEFAULT_OPUS_MODEL === 'claude-opus-g' && !env.CLAUDE_CODE_USE_VERTEX, JSON.stringify(Object.keys(env).filter((k) => /ANTHROPIC|CLAUDE_CODE_(USE|SKIP|DISABLE_EXP)/.test(k))));
       check('gateway: header values stay in the main process (the window sees only their names)', JSON.stringify(P.state()).includes('X-Team') && !JSON.stringify(P.state()).includes('blue') && !JSON.stringify(P.state()).includes('tok-1') && P.state().current.gateway.headerNames.join() === 'X-Org,X-Team');
-      check('gateway: an engine started later on this PC does not inherit stray routing variables', (() => { process.env.ANTHROPIC_BEDROCK_BASE_URL = 'http://elsewhere'; process.env.CLAUDE_CODE_USE_BEDROCK = '1'; const e = claudeCjs.authEnv(); delete process.env.ANTHROPIC_BEDROCK_BASE_URL; delete process.env.CLAUDE_CODE_USE_BEDROCK; return !e.ANTHROPIC_BEDROCK_BASE_URL && !e.CLAUDE_CODE_USE_BEDROCK; })());
+      check('gateway: an engine started later on this PC does not inherit stray routing variables', (() => { process.env.ANTHROPIC_VERTEX_BASE_URL = 'http://elsewhere'; process.env.CLAUDE_CODE_USE_VERTEX = '1'; const e = claudeCjs.authEnv(); delete process.env.ANTHROPIC_VERTEX_BASE_URL; delete process.env.CLAUDE_CODE_USE_VERTEX; return !e.ANTHROPIC_VERTEX_BASE_URL && !e.CLAUDE_CODE_USE_VERTEX; })());
       check('gateway: a web fetch skips the call to Anthropic first', claudeCjs.engineSettings().skipWebFetchPreflight === true && claudeCjs.engineSettings({ a: 1 }).a === 1);
       check('gateway: Claude Code mode is "api" (not the plan meter) while a gateway is set', claudeCjs.mode() === 'api');
 
-      // a gateway in Amazon Bedrock's format
-      const bedrockSeen = [];
-      const bedrock = http.createServer((req, res) => {
-        let body = ''; req.on('data', (d) => { body += d; });
-        req.on('end', () => {
-          bedrockSeen.push({ url: req.url, auth: req.headers.authorization, body });
-          if (req.headers.authorization !== 'Bearer bk-1') { res.writeHead(403); return res.end('{"message":"nope"}'); }
-          res.writeHead(400, J); res.end('{"message":"The provided model identifier is invalid."}'); // names the model: the address and key still count as accepted
-        });
-      });
-      await listen(bedrock);
-      const kBase = 'http://127.0.0.1:' + bedrock.address().port + '/bedrock';
-      r = await P.test({ id: 'claude', key: 'bk-1', baseUrl: kBase, style: 'bedrock' });
-      check('gateway (Bedrock style): checked with a Bedrock-format request, key as a bearer token', r.ok && r.style === 'bedrock' && bedrockSeen.some((x) => /^\/bedrock\/model\/.+\/invoke$/.test(x.url) && x.auth === 'Bearer bk-1' && /bedrock-2023-05-31/.test(x.body)), JSON.stringify({ r, bedrockSeen }));
-      r = await P.test({ id: 'claude', key: 'wrong', baseUrl: kBase, style: 'bedrock' });
-      check('gateway (Bedrock style): a wrong key is refused, with what to ask for', !r.ok && r.kind === 'refused' && /gateway's owner/.test(r.error), JSON.stringify(r));
-      P.save({ id: 'claude', method: 'key', key: 'bk-1', baseUrl: kBase, models: { light: '', standard: 'anthropic.claude-sonnet-x', strong: '' }, gateway: { style: 'bedrock', headers: '', disableBetas: false, certFile: '' } });
-      env = claudeCjs.authEnv();
-      check('gateway (Bedrock style): the engine gets the Bedrock address, skips Bedrock signing, and uses no Anthropic address', env.CLAUDE_CODE_USE_BEDROCK === '1' && env.ANTHROPIC_BEDROCK_BASE_URL === kBase && env.CLAUDE_CODE_SKIP_BEDROCK_AUTH === '1' && env.ANTHROPIC_AUTH_TOKEN === 'bk-1' && !env.ANTHROPIC_BASE_URL && !env.AWS_BEARER_TOKEN_BEDROCK && env.ANTHROPIC_DEFAULT_SONNET_MODEL === 'anthropic.claude-sonnet-x' && env.DISABLE_TELEMETRY === '1', JSON.stringify(Object.keys(env).filter((k) => /ANTHROPIC|BEDROCK/.test(k))));
 
       // taking over Claude Code's own settings (a fixture file; the real one is read in its own check below)
       const fixture = path.join(tmp, 'claude-settings.json');
@@ -137,12 +118,6 @@ app.whenReady().then(async () => {
       check('import: confirmed, it is saved and checked against the gateway (bearer, models found, pins kept)', applied.ok && applied.check && applied.check.ok && applied.check.models.length === 3 && after.method === 'key' && after.baseUrl === bBase && after.key.saved && after.models.standard === 'claude-sonnet-g' && after.models.strong === 'claude-opus-g' && after.gateway.disableBetas && after.gateway.certFile === 'C:\\certs\\root.pem', JSON.stringify({ applied, after }));
       check('import: the engine then runs with what was taken over, and the stray Authorization header was dropped', env.ANTHROPIC_BASE_URL === bBase && env.ANTHROPIC_AUTH_TOKEN === 'tok-1' && env.ANTHROPIC_CUSTOM_HEADERS === 'X-Org: blue' && env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS === '1');
       check('import: the settings file it read is byte-identical afterwards', sha(fixture) === fixSha);
-      writeFix({ env: { CLAUDE_CODE_USE_BEDROCK: '1', ANTHROPIC_BEDROCK_BASE_URL: kBase, CLAUDE_CODE_SKIP_BEDROCK_AUTH: '1', ANTHROPIC_AUTH_TOKEN: 'bk-1' } });
-      imp = P.importSettings();
-      check('import: a Bedrock-style setup is recognised', imp.ok && imp.found.style === 'bedrock' && imp.found.baseUrl === kBase && imp.found.keyFrom === 'ANTHROPIC_AUTH_TOKEN' && imp.found.switches.includes('CLAUDE_CODE_SKIP_BEDROCK_AUTH'), JSON.stringify(imp));
-      const applied2 = await P.applyImport();
-      env = claudeCjs.authEnv();
-      check('import: a Bedrock-style setup is saved and the engine gets the Bedrock variables', applied2.ok && applied2.check.ok && env.CLAUDE_CODE_USE_BEDROCK === '1' && env.ANTHROPIC_BEDROCK_BASE_URL === kBase && env.CLAUDE_CODE_SKIP_BEDROCK_AUTH === '1' && !env.ANTHROPIC_BASE_URL, JSON.stringify({ applied2 }));
       writeFix({ apiKeyHelper: 'get-key.sh', env: { ANTHROPIC_BASE_URL: bBase } });
       imp = P.importSettings();
       check('import: a key fetched by a command is not run; Agentic OS says to paste it', imp.ok && !imp.found.keyFrom && imp.found.notes.some((n) => /apiKeyHelper/.test(n) && /paste/i.test(n)), JSON.stringify(imp));
@@ -183,80 +158,25 @@ app.whenReady().then(async () => {
         tls.close();
       } else check('error: a certificate this PC does not trust (no openssl here, so the wording check only)', gwlib.netErrorKind(new Error('net::ERR_CERT_AUTHORITY_INVALID')) === 'cert' && gwlib.netErrorKind({ message: 'fetch failed', cause: { code: 'SELF_SIGNED_CERT_IN_CHAIN' } }) === 'cert');
       check('error: what the engine reports mid-chat becomes plain words (unreachable, certificate, key, request shape)', /VPN/.test(gwlib.friendlyError('API Error: Unable to connect (ECONNREFUSED)')) && /root certificate/.test(gwlib.friendlyError('unable to verify the first certificate')) && /gateway's owner/.test(gwlib.friendlyError('API Error: 401 invalid x-api-key')) && /rejects some requests/.test(gwlib.friendlyError('400 context_management Extra inputs are not permitted')) && gwlib.friendlyError('something else') === '');
-      for (const sv of [bearer, bedrock, picky, html]) sv.close();
+      for (const sv of [bearer, picky, html]) sv.close();
       S.set({ provider: prev });
       S.setSecret('key:claude', ''); S.setSecret('headers:claude', '');
     }
 
-    // ---------- Amazon Bedrock through a gateway: the way Claude Code itself is set up for it ----------
+    // ---------- model names through a gateway: only the pinned tiers are asked for, by their plain names ----------
     {
-      const claudeCjs = require('../electron/claude.cjs');
-      const gwlib = require('../electron/gateway.cjs');
+      const m = require('../electron/claude.cjs');
       const S = require('../electron/settings.cjs');
       const P = require('../electron/providers.cjs');
       const prev = S.get('provider');
-      const seen = [];
-      const bedrock2 = http.createServer((req, res) => {
-        req.resume();
-        req.on('end', () => {
-          seen.push({ url: req.url, auth: req.headers.authorization });
-          if (req.headers.authorization !== 'Bearer bk-2') { res.writeHead(403); return res.end('{"message":"nope"}'); }
-          res.writeHead(400, { 'Content-Type': 'application/json' }); res.end('{"message":"The provided model identifier is invalid."}');
-        });
-      });
-      await new Promise((r) => bedrock2.listen(0, '127.0.0.1', r));
-      const base2 = 'http://127.0.0.1:' + bedrock2.address().port + '/bedrock';
-      const fixture = path.join(tmp, 'claude-settings-bedrock.json');
-      process.env.AOS_CLAUDE_SETTINGS = fixture;
-      const arn = 'arn:aws:bedrock:us-east-2:123456789012:application-inference-profile/opus-prod';
-      const writeFix = (obj) => fs.writeFileSync(fixture, JSON.stringify(obj, null, 2));
-      writeFix({
-        modelOverrides: { 'claude-opus-4-7': arn },
-        env: {
-          CLAUDE_CODE_USE_BEDROCK: '1', ANTHROPIC_BEDROCK_BASE_URL: base2, AWS_BEARER_TOKEN_BEDROCK: 'bk-2', AWS_REGION: 'us-east-1',
-          ANTHROPIC_DEFAULT_SONNET_MODEL: 'us.anthropic.claude-sonnet-4-6', ANTHROPIC_BEDROCK_REGION_PREFIX: 'us', DISABLE_PROMPT_CACHING: '1',
-          AWS_PROFILE: 'ibm-sso', SOMETHING_ELSE: 'not copied',
-        },
-      });
-      let imp = P.importSettings();
-      const shown = JSON.stringify(imp);
-      check('bedrock import: a Bedrock API key in AWS_BEARER_TOKEN_BEDROCK is found, with the region and the settings that go with it', imp.ok && imp.found.style === 'bedrock' && imp.found.keyFrom === 'AWS_BEARER_TOKEN_BEDROCK' && imp.found.region === 'us-east-1' && imp.found.extras.includes('ANTHROPIC_BEDROCK_REGION_PREFIX') && imp.found.extras.includes('DISABLE_PROMPT_CACHING') && imp.found.extras.includes('modelOverrides') && imp.found.models.standard === 'us.anthropic.claude-sonnet-4-6', shown);
-      check('bedrock import: nothing else is copied, and the key is never shown', !imp.found.extras.includes('SOMETHING_ELSE') && !shown.includes('bk-2') && !shown.includes('not copied'));
-      check('bedrock import: an AWS sign-in in the settings is said plainly to be something Agentic OS does not do', imp.found.notes.some((n) => /AWS_PROFILE/.test(n) && /does not do that/.test(n)), shown);
-      P.save({ id: 'claude', method: 'subscription' }); S.setSecret('key:claude', '');
-      const applied = await P.applyImport();
-      check('bedrock import: saved, and the check used the model name from the settings and the Bedrock key as a bearer token', applied.ok && applied.check.ok && seen.some((x) => x.url === '/bedrock/model/' + encodeURIComponent('us.anthropic.claude-sonnet-4-6') + '/invoke' && x.auth === 'Bearer bk-2'), JSON.stringify({ applied, seen }));
-      let env = claudeCjs.authEnv();
-      check('bedrock engine: Bedrock on, the gateway address, the Bedrock key in its own variable, the region and the plain settings', env.CLAUDE_CODE_USE_BEDROCK === '1' && env.ANTHROPIC_BEDROCK_BASE_URL === base2 && env.AWS_BEARER_TOKEN_BEDROCK === 'bk-2' && !env.ANTHROPIC_AUTH_TOKEN && env.AWS_REGION === 'us-east-1' && env.ANTHROPIC_BEDROCK_REGION_PREFIX === 'us' && env.DISABLE_PROMPT_CACHING === '1' && env.ANTHROPIC_DEFAULT_SONNET_MODEL === 'us.anthropic.claude-sonnet-4-6' && !env.SOMETHING_ELSE, JSON.stringify(Object.keys(env).filter((k) => /ANTHROPIC|BEDROCK|AWS/.test(k))));
-      check('bedrock engine: AWS signing is always skipped (Agentic OS signs nothing), so the engine makes no startup model probes', env.CLAUDE_CODE_SKIP_BEDROCK_AUTH === '1');
-      check('bedrock engine: the company\'s own profile map is handed to Claude Code', JSON.stringify(claudeCjs.engineSettings().modelOverrides) === JSON.stringify({ 'claude-opus-4-7': arn }) && claudeCjs.engineSettings().skipWebFetchPreflight === true);
-      // model names: through a gateway only the pinned tiers are asked for, by their plain names, so the pins apply
-      const m = claudeCjs;
+      P.save({ id: 'claude', method: 'key', key: 'gw-models-key', baseUrl: 'http://127.0.0.1:9', models: { light: '', standard: '', strong: '' } });
       check('gateway models: sonnet is asked for by name; a tier with nothing pinned falls back to sonnet instead of a model the account may lack', m.engineModel(m.SONNET) === 'sonnet' && m.engineModel(m.HAIKU) === 'sonnet' && m.engineModel(m.OPUS) === 'sonnet' && m.engineModel('claude-fable-5-1') === 'sonnet' && m.helperDefs().scout.model === 'sonnet');
-      P.save({ id: 'claude', method: 'key', models: { light: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', standard: 'us.anthropic.claude-sonnet-4-6', strong: 'us.anthropic.claude-opus-4-8' } });
+      P.save({ id: 'claude', method: 'key', models: { light: 'claude-haiku-g', standard: 'claude-sonnet-g', strong: 'claude-opus-g' } });
       check('gateway models: with all three pinned, haiku, sonnet and opus are asked for by name', m.engineModel(m.HAIKU) === 'haiku' && m.engineModel(m.OPUS) === 'opus' && m.engineModel('claude-fable-5-1') === 'opus' && m.helperDefs().scout.model === 'haiku');
       S.set({ provider: { ...S.get('provider'), id: 'claude', method: 'subscription', baseUrl: '' } });
       check('gateway models: on a Claude plan or an Anthropic key the exact version is asked for, as before', m.engineModel(m.HAIKU) === m.HAIKU && m.engineModel(m.SONNET) === m.SONNET);
-      // the same, but this time the settings do skip AWS signing and use a plain token
-      writeFix({ env: { CLAUDE_CODE_USE_BEDROCK: '1', ANTHROPIC_BEDROCK_BASE_URL: base2, CLAUDE_CODE_SKIP_BEDROCK_AUTH: '1', AWS_BEARER_TOKEN_BEDROCK: 'bk-2' } });
-      imp = P.importSettings(); await P.applyImport(); env = claudeCjs.authEnv();
-      check('bedrock engine: the same with a settings file that already skips AWS signing', env.CLAUDE_CODE_SKIP_BEDROCK_AUTH === '1' && env.AWS_BEARER_TOKEN_BEDROCK === 'bk-2');
-      // a stray region on this PC does not leak in
-      process.env.AWS_REGION = 'eu-west-1'; process.env.AWS_PROFILE = 'x';
-      P.save({ id: 'claude', method: 'key', baseUrl: base2, gateway: { style: 'bedrock', region: '' } });
-      env = claudeCjs.authEnv();
-      delete process.env.AWS_REGION; delete process.env.AWS_PROFILE;
-      check('bedrock engine: a stray AWS_REGION on this PC does not reach the engine', env.AWS_REGION === undefined);
-      // settings that only sign in as an AWS identity
-      writeFix({ awsAuthRefresh: 'aws sso login --profile ibm', env: { CLAUDE_CODE_USE_BEDROCK: '1', AWS_PROFILE: 'ibm', AWS_REGION: 'us-east-1' } });
-      imp = P.importSettings();
-      check('bedrock import: settings that only sign in as an AWS identity (no gateway address) say so, and what to do', !imp.ok && /AWS sign-in/.test(imp.error) && /gateway address and key/.test(imp.error), JSON.stringify(imp));
-      check('bedrock errors: the stream, inference-profile and model-access messages are put in plain words', /pass Amazon Bedrock's streaming replies/.test(gwlib.friendlyError('Bedrock streaming response has content-type text/event-stream')) && /inference-profile model name/.test(gwlib.friendlyError("400 on-demand throughput isn't supported")) && /refused that model/.test(gwlib.friendlyError('The provided model identifier is invalid')));
-      fs.rmSync(fixture, { force: true });
-      delete process.env.AOS_CLAUDE_SETTINGS;
-      bedrock2.close();
       S.set({ provider: prev });
-      S.setSecret('key:claude', ''); S.setSecret('headers:claude', '');
+      S.setSecret('key:claude', '');
     }
 
     // ---------- nothing is copied from any other app ----------

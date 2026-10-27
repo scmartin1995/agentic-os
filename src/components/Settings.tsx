@@ -57,7 +57,7 @@ export default function Settings({ onClose, onSetup, start, onOpen, chatItems, o
 }
 
 // Appearance only: Agentic OS is text only at launch, so there is no voice to set, and no spending meter until it is known
-// how a gateway (Amazon Bedrock) reports cost.
+// how a gateway reports cost.
 function Look() {
   const [theme, setLook] = useState<Theme>(getTheme);
   const look = (t: Theme) => { setLook(t); setTheme(t); };

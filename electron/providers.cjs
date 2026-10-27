@@ -40,11 +40,11 @@ function state() {
   };
 }
 
-// What the window may know about the gateway settings: the style and switches, and the names (not values) of extra headers.
+// What the window may know about the gateway settings: the switches, and the names (not values) of extra headers.
 function gatewayState(p) {
   const g = p.gateway || {};
   const h = gw.parseHeaders(settings.getSecret('headers:claude'));
-  return { style: g.style === 'bedrock' ? 'bedrock' : 'anthropic', disableBetas: !!g.disableBetas, certFile: g.certFile || '', headerNames: h.ok ? h.names : [], region: g.region || '', keyKind: g.keyVar === 'AWS_BEARER_TOKEN_BEDROCK' ? 'bedrock-key' : 'token' };
+  return { disableBetas: !!g.disableBetas, certFile: g.certFile || '', headerNames: h.ok ? h.names : [] };
 }
 
 // The resolved connection, for the engine (main process only: includes the key).
@@ -85,14 +85,14 @@ function netFetch(url, opts) {
 
 // Free check that a key works: ask for the model list. With an address it is the gateway check (testGateway).
 // Returns { ok, models, suggested, error }.
-async function test({ key, baseUrl, style, headers, disableBetas, model }) {
+async function test({ key, baseUrl, headers, disableBetas, model }) {
   key = String(key || '').trim() || settings.getSecret('key:claude');
   const base = String(baseUrl || '').trim().replace(/\/+$/, '');
   try {
     if (base) {
       const h = headers == null ? { ok: true, text: settings.getSecret('headers:claude') } : gw.parseHeaders(headers);
       if (!h.ok) return { ok: false, error: h.error };
-      return await testGateway(base, key, { style, headers: h.text, disableBetas, model });
+      return await testGateway(base, key, { headers: h.text, disableBetas, model });
     }
     if (!key) return { ok: false, error: 'Paste your key first.' };
     const res = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(15000) });
@@ -108,10 +108,10 @@ async function test({ key, baseUrl, style, headers, disableBetas, model }) {
 
 // An organisation's gateway in front of Claude: an address and a key. Works out which header the gateway reads the key
 // from (a bearer token first, then x-api-key), using the gateway's free model list where it has one and a one-token
-// request where it does not. A gateway that speaks Amazon Bedrock's format gets a one-token request in that format.
+// request where it does not.
 // Nothing is sent anywhere but that address. Every failure is one of: not reachable, certificate not trusted, key
 // refused, request shape rejected, or "not a gateway", each with what to ask the gateway's owner for.
-async function testGateway(base, key, { style = 'anthropic', headers = '', model: probeModel = '' } = {}) {
+async function testGateway(base, key, { headers = '' } = {}) {
   if (!/^https?:\/\//i.test(base)) return { ok: false, error: 'That address should start with https:// (or http://).', kind: 'address' };
   const extra = {};
   for (const l of String(headers || '').split('\n').filter(Boolean)) extra[l.slice(0, l.indexOf(':')).trim()] = l.slice(l.indexOf(':') + 1).trim();
@@ -127,21 +127,6 @@ async function testGateway(base, key, { style = 'anthropic', headers = '', model
     return { good: true };
   };
 
-  if (style === 'bedrock') {
-    if (!key && !Object.keys(extra).length) return fail('refused', 'Paste the key the gateway gave you first (or add the header it asks for).');
-    const model = encodeURIComponent(String(probeModel || '').trim() || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'); // the model name the user pinned, else a plain guess: any answer that names the model still proves the address and key
-    const h = { 'content-type': 'application/json', ...extra, ...(key ? { Authorization: `Bearer ${key}` } : {}) };
-    let res;
-    try { res = await send(`${base}/model/${model}/invoke`, { method: 'POST', headers: h, body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 1, messages: [{ role: 'user', content: '.' }] }) }); }
-    catch (err) { return netFail(err); }
-    if (res.status === 401 || res.status === 403) return fail('refused');
-    if (res.status >= 500) return fail('other', `The gateway answered with an error (${res.status}). Ask its owner whether it is running.`);
-    const a = await accepted(res);
-    if (a.bad) return a.bad;
-    lastProbe = { base, keyHeader: 'bearer' };
-    return { ok: true, models: [], suggested: nothing, keyHeader: 'bearer', style }; // Bedrock gateways have no model list to read: the model names are typed in
-  }
-
   if (!key && !Object.keys(extra).length) return fail('refused', 'Paste your key first.');
   const styles = key ? [['bearer', { Authorization: `Bearer ${key}` }], ['x-api-key', { 'x-api-key': key }]] : [['bearer', {}]];
   const common = { 'anthropic-version': '2023-06-01', ...extra };
@@ -156,7 +141,7 @@ async function testGateway(base, key, { style = 'anthropic', headers = '', model
       if (!body || typeof body !== 'object') return fail('notGateway'); // a sign-in page or similar, not the gateway
       const list = (Array.isArray(body) ? body : body.data || body.models || []).map((m) => ({ id: String(m.id || m.name || ''), created: Number(m.created) || Date.parse(m.created_at || '') / 1000 || 0 })).filter((m) => m.id && /claude|anthropic/i.test(m.id));
       lastProbe = { base, keyHeader };
-      return { ok: true, models: list.map((m) => m.id).sort(), suggested: suggest(list), keyHeader, style };
+      return { ok: true, models: list.map((m) => m.id).sort(), suggested: suggest(list), keyHeader };
     }
     // no model list on this gateway: a one-token request shows whether the address and key are taken
     let r2;
@@ -167,13 +152,13 @@ async function testGateway(base, key, { style = 'anthropic', headers = '', model
     const a = await accepted(r2);
     if (a.bad) return a.bad;
     lastProbe = { base, keyHeader };
-    return { ok: true, models: [], suggested: nothing, keyHeader, style }; // an error naming the model still proves the address and key
+    return { ok: true, models: [], suggested: nothing, keyHeader }; // an error naming the model still proves the address and key
   }
   return refused ? fail('refused') : fail('unreachable');
 }
 
 // Save the choice made in onboarding or Settings. A key is stored encrypted and never handed back.
-// `gateway`: { style, headers, disableBetas, certFile }; headers is text (replaces what was saved; '' clears it) or left out (keeps it).
+// `gateway`: { headers, disableBetas, certFile }; headers is text (replaces what was saved; '' clears it) or left out (keeps it).
 function save({ id, method, key, baseUrl, models, price, gateway }) {
   const def = byId(id);
   if (!def.methods.includes(method)) return { ok: false, error: 'That way of signing in is not offered for this provider.' };
@@ -183,9 +168,8 @@ function save({ id, method, key, baseUrl, models, price, gateway }) {
     if (!h.ok) return { ok: false, error: h.error };
     settings.setSecret('headers:claude', h.text);
   }
-  const bedrock = def.id === 'claude' && g.style === 'bedrock';
   if (method === 'key' && key) settings.setSecret(`key:${def.id}`, String(key).trim());
-  if (method === 'key' && !settings.getSecret(`key:${def.id}`) && !(def.id === 'claude' && settings.envOr('ANTHROPIC_API_KEY')) && !(bedrock && String(baseUrl || '').trim())) return { ok: false, error: 'No key saved yet.' };
+  if (method === 'key' && !settings.getSecret(`key:${def.id}`) && !(def.id === 'claude' && settings.envOr('ANTHROPIC_API_KEY'))) return { ok: false, error: 'No key saved yet.' };
   const prev = settings.get('provider');
   const same = prev.id === def.id;
   const pg = (same && prev.gateway) || {};
@@ -196,15 +180,8 @@ function save({ id, method, key, baseUrl, models, price, gateway }) {
     price: price !== undefined ? price : same ? prev.price || null : null,
     keyHeader: lastProbe.keyHeader && lastProbe.base === String(baseUrl || '').trim().replace(/\/+$/, '') ? lastProbe.keyHeader : same ? prev.keyHeader || '' : '',
     gateway: {
-      style: g.style ? (g.style === 'bedrock' ? 'bedrock' : 'anthropic') : pg.style || 'anthropic',
       disableBetas: g.disableBetas != null ? !!g.disableBetas : !!pg.disableBetas,
       certFile: g.certFile != null ? String(g.certFile).trim() : pg.certFile || '',
-      // Bedrock style: which variable holds the key, whether Claude Code skips AWS signing, the AWS region, and plain extra settings
-      keyVar: g.keyVar ? (g.keyVar === 'AWS_BEARER_TOKEN_BEDROCK' ? 'AWS_BEARER_TOKEN_BEDROCK' : 'ANTHROPIC_AUTH_TOKEN') : pg.keyVar || 'ANTHROPIC_AUTH_TOKEN',
-      skipAuth: g.skipAuth != null ? !!g.skipAuth : pg.skipAuth !== false,
-      region: g.region != null ? String(g.region).trim().replace(/[^\w-]/g, '').slice(0, 30) : pg.region || '',
-      extraEnv: g.extraEnv != null ? g.extraEnv : pg.extraEnv || {},
-      modelOverrides: g.modelOverrides != null ? g.modelOverrides : pg.modelOverrides || {},
     },
   } });
   return { ok: true };
@@ -226,13 +203,12 @@ async function applyImport() {
   const f = pendingImport;
   if (!f) return { ok: false, error: 'Nothing to take over. Press the button again.' };
   if (f.key) settings.setSecret('key:claude', f.key);
-  else if (f.style === 'bedrock') settings.setSecret('key:claude', ''); // a gateway that needs no key: do not keep an old one
   // check the connection first, so the saved choice carries the key header that worked and any models the gateway lists
-  const checked = f.baseUrl ? await testGateway(f.baseUrl, f.key, { style: f.style, headers: f.headers, model: f.models.standard || f.models.light || f.models.strong }) : null;
+  const checked = f.baseUrl ? await testGateway(f.baseUrl, f.key, { headers: f.headers }) : null;
   const ok = !!(checked && checked.ok);
-  const r = save({ id: 'claude', method: 'key', baseUrl: f.baseUrl, models: ok ? mergePins(f.models, checked.suggested) : f.models, gateway: { style: f.style, headers: f.headers || '', disableBetas: f.disableBetas, certFile: f.certFile, keyVar: f.keyVar, skipAuth: f.skipAuth, region: f.region, extraEnv: f.extraEnv, modelOverrides: f.modelOverrides } });
+  const r = save({ id: 'claude', method: 'key', baseUrl: f.baseUrl, models: ok ? mergePins(f.models, checked.suggested) : f.models, gateway: { headers: f.headers || '', disableBetas: f.disableBetas, certFile: f.certFile } });
   if (!r.ok) return r;
-  if (f.style !== 'bedrock' && f.keyHeader && !ok) { const p = settings.get('provider'); settings.set({ provider: { ...p, keyHeader: f.keyHeader } }); } // Claude Code already knew which header the key goes in
+  if (f.keyHeader && !ok) { const p = settings.get('provider'); settings.set({ provider: { ...p, keyHeader: f.keyHeader } }); } // Claude Code already knew which header the key goes in
   pendingImport = null;
   return { ok: true, check: checked ? { ok, error: checked.error || '', kind: checked.kind || '', models: checked.models || [] } : null };
 }

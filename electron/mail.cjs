@@ -12,6 +12,7 @@
 // "Doesn't need a reply" and "done" are remembered in mail-feedback.json and shown to the classifier as examples.
 const { execFile } = require('child_process');
 const store = require('./store.cjs');
+const settings = require('./settings.cjs');
 
 const DAYS = 7;                // how far back a pull looks the first time, and the most it ever looks back
 const OVERLAP_MS = 24 * 3600000; // later pulls start this long before the last good pull, for mail that reaches Outlook late (asleep, off VPN)
@@ -116,7 +117,13 @@ function system(examples) {
 - needsReply: true ONLY if a real person wrote this to the user (they are on the To line, or named in a CC with a direct ask) AND expects an answer or action from the user (a question, a request, a decision, a deadline), AND nothing says it is already handled. False for announcements, thanks and acknowledgements, FYIs, group broadcasts, automated notices, and threads where the user is only copied with no ask of them.
 - reason: one short sentence on why (what is being asked of the user, or why nothing is). Never invent anything that is not in the message.${ex}`;
 }
-const DRAFT_SYSTEM = `You write the first draft of an email reply for Sterling Martin, a technical product owner on a database team. Write only the body of the reply: no subject line, no commentary. Plain, direct, short, no filler and no cheerleading. Start with the sender's first name (names appear as "Last, First"; use the first name). Answer what was asked. If a fact, date or decision is needed that the email does not give, put it in [square brackets] for Sterling to fill in rather than guessing; promise nothing the email does not already commit to. End with "Sterling".`;
+// The reply drafts are written for whoever the user said they are in Settings ("What Agentic OS calls you").
+function draftSystem() {
+  let name = '';
+  try { name = String(settings.get('userName') || '').trim(); } catch { /* outside Electron (tests): no name */ }
+  const first = name ? name.split(/\s+/)[0] : 'the user';
+  return `You write the first draft of an email reply for ${name || 'the user'}. Write only the body of the reply: no subject line, no commentary. Plain, direct, short, no filler and no cheerleading. Start with the sender's first name (names appear as "Last, First"; use the first name). Answer what was asked. If a fact, date or decision is needed that the email does not give, put it in [square brackets] for ${first} to fill in rather than guessing; promise nothing the email does not already commit to.${name ? ` End with "${first}".` : ''}`;
+}
 
 async function classify(batch, oneShot, examples) {
   const prompt = batch.map((m) => `=== id: ${m.id}\nfrom: ${m.from}\nto you: ${m.addressed}\nsubject: ${m.subject}\nreceived: ${m.received}\n\n${m.body.slice(0, BODY_FOR_MODEL)}`).join('\n\n');
@@ -141,7 +148,7 @@ const SLOP = [
 const slop = (text) => SLOP.filter(([re]) => re.test(text)).map(([, why]) => why);
 async function draftFor(m, oneShot) {
   const prompt = `From: ${m.from}\nSubject: ${m.subject}\nReceived: ${m.received}\n\n${m.body}`;
-  const system = `${DRAFT_SYSTEM}\n\n${SLOP_RULES}`;
+  const system = `${draftSystem()}\n\n${SLOP_RULES}`;
   let text = String((await oneShot({ system, prompt, model: 'sonnet' })).text || '').trim();
   const found = slop(text);
   if (found.length) { // one retry, naming exactly what to remove; keep the better of the two
@@ -242,7 +249,7 @@ const WATCH = [
   { kind: 'escalation', label: 'Escalation', test: (t) => /\b(urgent|escalat\w+|asap)\b/i.test(t) },
   { kind: 'date', label: 'Date wanted', test: (t) => MIG.test(t) && /\b(needed by|confirm\w* (the |a )?(cutover|migration|go[- ]?live)? ?date|by (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w* \d{1,2}|cutover date)\b/i.test(t) },
 ];
-// Jira notices never go on the watch list (ignored [261026], on Sterling's request); neither do out-of-office replies.
+// Jira notices never go on the watch list (ignored [261026], on request); neither do out-of-office replies.
 const JIRA = /^\[JIRA\]/i;
 const OOO = /^(automatic reply|out of office)/i;
 const watchOf = (e) => {

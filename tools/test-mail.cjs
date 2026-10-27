@@ -12,7 +12,7 @@ const M = require('../electron/mail.cjs');
 
 let passed = 0;
 const test = async (name, fn) => { try { await fn(); passed++; console.log('ok   ', name); } catch (e) { console.log('FAIL ', name, '\n     ', String(e.message).split('\n')[0]); process.exitCode = 1; } };
-const msg = (o) => ({ id: 'AA' + Math.random().toString(16).slice(2, 10).toUpperCase(), folder: 'Inbox', subject: 'Hello', from: 'Rose, Kyle', fromAddr: 'kyle@x.com', to: 'MARTIN, STERLING', cc: '', received: new Date().toISOString().slice(0, 19), unread: true, verb: 0, body: 'Can you confirm the date?', ...o });
+const msg = (o) => ({ id: 'AA' + Math.random().toString(16).slice(2, 10).toUpperCase(), folder: 'Inbox', subject: 'Hello', from: 'Lee, Sam', fromAddr: 'sam@example.com', to: 'DOE, JANE', cc: '', received: new Date().toISOString().slice(0, 19), unread: true, verb: 0, body: 'Can you confirm the date?', ...o });
 
 (async () => {
   const seenByModel = [];
@@ -20,7 +20,7 @@ const msg = (o) => ({ id: 'AA' + Math.random().toString(16).slice(2, 10).toUpper
   const prompts = [];
   const oneShot = async ({ prompt, system, model }) => {
     prompts.push({ system, model });
-    if (model === 'sonnet') return { text: 'Kyle,\n\nConfirmed for [date].\n\nSterling' };
+    if (model === 'sonnet') return { text: 'Sam,\n\nConfirmed for [date].\n\nJane' };
     if (failNext) { failNext = false; throw new Error('gateway said no'); }
     const ids = [...prompt.matchAll(/^=== id: (\S+)/gm)].map((m) => m[1]);
     seenByModel.push(...ids);
@@ -29,19 +29,19 @@ const msg = (o) => ({ id: 'AA' + Math.random().toString(16).slice(2, 10).toUpper
   };
 
   await test('bulk rule: only ServiceNow is skipped; everything else, including Jira, no-reply and calendar replies, goes through', () => {
-    assert.ok(M.isBulk({ from: 'ServiceNow', fromAddr: 'service-now@lumen.com', subject: 'x' }));
+    assert.ok(M.isBulk({ from: 'ServiceNow', fromAddr: 'service-now@example.com', subject: 'x' }));
     assert.ok(!M.isBulk({ from: 'Automation for Jira (Jira)', fromAddr: '', subject: 'x' })); // loosened: only ServiceNow is skipped
-    assert.ok(!M.isBulk({ from: 'Corp', fromAddr: 'noreply@lumen.com', subject: 'x' }));
-    assert.ok(M.isBulk({ from: 'Rose, Kyle', fromAddr: '', subject: 'Your SNOW ticket INC0012 was updated' }));
-    assert.ok(!M.isBulk({ from: 'Rose, Kyle', fromAddr: '', subject: 'Accepted: Standup' }));
-    assert.ok(!M.isBulk({ from: 'Rose, Kyle', fromAddr: 'kyle@x.com', subject: 'Please confirm cutover date' }));
+    assert.ok(!M.isBulk({ from: 'Corp', fromAddr: 'noreply@example.com', subject: 'x' }));
+    assert.ok(M.isBulk({ from: 'Lee, Sam', fromAddr: '', subject: 'Your SNOW ticket INC0012 was updated' }));
+    assert.ok(!M.isBulk({ from: 'Lee, Sam', fromAddr: '', subject: 'Accepted: Standup' }));
+    assert.ok(!M.isBulk({ from: 'Lee, Sam', fromAddr: 'sam@example.com', subject: 'Please confirm cutover date' }));
   });
 
   const reply = msg({ subject: 'Please confirm cutover date', from: 'Schwaigert, John' });
   const fyi = msg({ subject: 'FYI new runbook', from: 'Hass, Sandy', body: 'FYI the runbook moved.' });
   const jira = msg({ subject: 'Incident INC001 updated', from: 'ServiceNow' }); // named jira from when Jira mail was skipped too
-  const mine = msg({ subject: 'note to self', from: 'MARTIN, STERLING' });
-  const reader = async () => ({ me: 'MARTIN, STERLING', items: [reply, fyi, jira, mine] });
+  const mine = msg({ subject: 'note to self', from: 'DOE, JANE' });
+  const reader = async () => ({ me: 'DOE, JANE', items: [reply, fyi, jira, mine] });
 
   await test('a pull sends only real people to the model; bulk and own notes never reach it', async () => {
     const r = await M.pull({ oneShot, reader });
@@ -73,23 +73,23 @@ const msg = (o) => ({ id: 'AA' + Math.random().toString(16).slice(2, 10).toUpper
     assert.ok(!('body' in stored) && !('draft' in stored));
     const next = msg({ subject: 'Another one' });
     prompts.length = 0;
-    await M.pull({ oneShot, reader: async () => ({ me: 'MARTIN, STERLING', items: [next] }) });
+    await M.pull({ oneShot, reader: async () => ({ me: 'DOE, JANE', items: [next] }) });
     assert.match(prompts.find((p) => p.model === 'haiku').system, /NO reply needed: from Schwaigert, John/);
   });
   await test('a reply made in Outlook closes the item on the next pull', async () => {
     const r2 = msg({ subject: 'Please confirm the thing', from: 'Lane, Thomas' });
-    await M.pull({ oneShot, reader: async () => ({ me: 'MARTIN, STERLING', items: [r2] }) });
+    await M.pull({ oneShot, reader: async () => ({ me: 'DOE, JANE', items: [r2] }) });
     assert.ok(M.state().open.some((m) => m.id === r2.id));
-    const r = await M.pull({ oneShot, reader: async () => ({ me: 'MARTIN, STERLING', items: [{ ...r2, verb: 102 }] }) });
+    const r = await M.pull({ oneShot, reader: async () => ({ me: 'DOE, JANE', items: [{ ...r2, verb: 102 }] }) });
     assert.strictEqual(r.closed, 1);
     assert.ok(!M.state().open.some((m) => m.id === r2.id));
   });
   await test('a failed model call stores nothing, so the next pull tries again', async () => {
     const m = msg({ subject: 'Please confirm retry', from: 'Burrell, Douglas' });
     failNext = true;
-    const r = await M.pull({ oneShot, reader: async () => ({ me: 'MARTIN, STERLING', items: [m] }) });
+    const r = await M.pull({ oneShot, reader: async () => ({ me: 'DOE, JANE', items: [m] }) });
     assert.strictEqual(r.failed, 1); assert.strictEqual(r.added, 0);
-    const r2 = await M.pull({ oneShot, reader: async () => ({ me: 'MARTIN, STERLING', items: [m] }) });
+    const r2 = await M.pull({ oneShot, reader: async () => ({ me: 'DOE, JANE', items: [m] }) });
     assert.strictEqual(r2.added, 1);
   });
   await test('Outlook not open: the pull reports it and changes nothing', async () => {
@@ -107,24 +107,24 @@ const msg = (o) => ({ id: 'AA' + Math.random().toString(16).slice(2, 10).toUpper
 
   // ---- drafts follow no-ai-slop ----
   await test('slop check: catches dashes, stock phrases, banned words and "not X but Y"; passes a plain reply', () => {
-    assert.deepStrictEqual(M.slop('Kyle,\n\nConfirmed for Oct 30. I will send the runbook Friday.\n\nSterling'), []);
+    assert.deepStrictEqual(M.slop('Sam,\n\nConfirmed for Oct 30. I will send the runbook Friday.\n\nJane'), []);
     for (const bad of ['Confirmed — Friday.', 'I hope this finds you well.', 'We will leverage the pipeline.', 'Let me know if you have questions.', 'This is not a delay but a reschedule.', 'Great news!', 'Happy to circle back.']) {
       assert.ok(M.slop(bad).length > 0, bad);
     }
   });
   await test('a draft with slop is rewritten once; a clean draft is not', async () => {
     let calls = 0;
-    const dirty = async ({ prompt }) => { calls++; return { text: prompt.includes('Your first draft') ? 'Kyle,\n\nConfirmed for Oct 30.\n\nSterling' : 'Kyle,\n\nI hope this finds you well. Confirmed for Oct 30 — happy to help!\n\nSterling' }; };
-    const d = await M.draftFor({ from: 'Rose, Kyle', subject: 's', received: 'r', body: 'b' }, dirty);
+    const dirty = async ({ prompt }) => { calls++; return { text: prompt.includes('Your first draft') ? 'Sam,\n\nConfirmed for Oct 30.\n\nJane' : 'Sam,\n\nI hope this finds you well. Confirmed for Oct 30 — happy to help!\n\nJane' }; };
+    const d = await M.draftFor({ from: 'Lee, Sam', subject: 's', received: 'r', body: 'b' }, dirty);
     assert.strictEqual(calls, 2); assert.deepStrictEqual(M.slop(d), []);
     calls = 0;
-    await M.draftFor({ from: 'Rose, Kyle', subject: 's', received: 'r', body: 'b' }, async () => { calls++; return { text: 'Kyle,\n\nConfirmed.\n\nSterling' }; });
+    await M.draftFor({ from: 'Lee, Sam', subject: 's', received: 'r', body: 'b' }, async () => { calls++; return { text: 'Sam,\n\nConfirmed.\n\nJane' }; });
     assert.strictEqual(calls, 1);
   });
   await test('if the rewrite is no better, the original is kept (never worse)', async () => {
-    const worse = async ({ prompt }) => ({ text: prompt.includes('Your first draft') ? 'Kyle — I hope this finds you well! Happy to help!' : 'Kyle — confirmed.' });
-    const d = await M.draftFor({ from: 'Rose, Kyle', subject: 's', received: 'r', body: 'b' }, worse);
-    assert.strictEqual(d, 'Kyle — confirmed.');
+    const worse = async ({ prompt }) => ({ text: prompt.includes('Your first draft') ? 'Sam — I hope this finds you well! Happy to help!' : 'Sam — confirmed.' });
+    const d = await M.draftFor({ from: 'Lee, Sam', subject: 's', received: 'r', body: 'b' }, worse);
+    assert.strictEqual(d, 'Sam — confirmed.');
   });
 
   // ---- the background pull ----
@@ -154,7 +154,7 @@ const msg = (o) => ({ id: 'AA' + Math.random().toString(16).slice(2, 10).toUpper
     const db = JSON.parse(fs.readFileSync(f, 'utf8'));
     const now = Date.now();
     const at = (ms) => new Date(now - ms).toISOString().slice(0, 19);
-    db.items.WATCH1 = { id: 'WATCH1', subject: 'Migration complete: ABC', from: 'Rose, Kyle', received: at(1000), summary: 'Migration of ABC is complete.', atoms: [], status: 'info' };
+    db.items.WATCH1 = { id: 'WATCH1', subject: 'Migration complete: ABC', from: 'Lee, Sam', received: at(1000), summary: 'Migration of ABC is complete.', atoms: [], status: 'info' };
     db.items.WATCH2 = { id: 'WATCH2', subject: 'RE: Migration complete: ABC', from: 'Lee, Pat', received: at(5000), summary: 'Migration of ABC is complete, thanks.', atoms: [], status: 'info' };
     fs.writeFileSync(f, JSON.stringify(db));
     const w = M.state().watch.filter((e) => /ABC/.test(e.subject));

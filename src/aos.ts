@@ -1,63 +1,22 @@
-// `window.aos`: everything the screen can ask the app to do. Built here, once, on top of a two-call bridge:
-//   - in the desktop window the bridge is Electron's (electron/preload.cjs)
-//   - on a paired phone it is the app's local web server (electron/remote.cjs): fetch for calls, one event stream back
-// So every component talks to the same object wherever it runs.
+// `window.aos`: everything the screen can ask the app to do, built once on top of Electron's two-call bridge
+// (electron/preload.cjs).
 import type {
-  ActionItem, NoteEntry, SavedNote, Basics, BrainEvent, BrainStatus, ChatSummary, CliStatus, ConnectorMode, ConnectorPolicy, ConnectorsSummary, DreamCard, DreamEvent, DreamState, FileContent,
-  GraphData, HealthSummary, LedgerSummary, Method, Models, PhoneState, ProjectInfo, ProvidersState, SavedChat, SkillInfo, TreeNode, UsageV2, ValueSummary,
+  ActionItem, NoteEntry, NoteWeek, SavedNote, DiscoverReport, OkfMode, OkfResult, Basics, BrainEvent, BrainStatus, ChatSummary, CliStatus, ConnectorMode, GatewayExtra, GatewayStyle, ImportFound, ConnectorsSummary, ToolsSummary, DreamCard, DreamEvent, DreamState, FileContent,
+  FileType, GraphData, HealthSummary, LedgerSummary, Method, Models, ProjectInfo, ProvidersState, SavedChat, SkillInfo, TreeNode, UsageV2, V1Look, ValueSummary,
+  WireApi, WorkersState, SearchHit, SearchStatus, MailState, MailPullResult,
 } from './types';
 
-interface Bridge { kind: 'desktop' | 'phone'; quiet?: boolean; invoke(channel: string, ...args: unknown[]): Promise<any>; on(channel: string, fn: (payload: any) => void): () => void }
+interface Bridge { kind: 'desktop'; os?: 'mac' | 'win'; quiet?: boolean; invoke(channel: string, ...args: unknown[]): Promise<any>; on(channel: string, fn: (payload: any) => void): () => void }
 
-// ---- the phone's bridge ----
-function b64(buf: ArrayBuffer) {
-  const bytes = new Uint8Array(buf);
-  let s = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-}
-const pack = (v: unknown): unknown => (v instanceof ArrayBuffer ? { __b64: b64(v) } : ArrayBuffer.isView(v) ? { __b64: b64(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) as ArrayBuffer) } : v);
-
-function phoneBridge(): Bridge {
-  const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  const subs = new Map<string, Set<(p: any) => void>>();
-  let es: EventSource | null = null;
-  const connect = () => {
-    es = new EventSource(`/api/events?c=${id}`);
-    es.onmessage = (m) => {
-      try { const { channel, payload } = JSON.parse(m.data); subs.get(channel)?.forEach((fn) => fn(payload)); } catch { /* not ours */ }
-    };
-    es.onopen = () => window.dispatchEvent(new CustomEvent('aos-link', { detail: true }));
-    es.onerror = () => window.dispatchEvent(new CustomEvent('aos-link', { detail: false })); // the browser retries by itself
-  };
-  connect();
-  return {
-    kind: 'phone',
-    async invoke(channel, ...args) {
-      const res = await fetch('/api/invoke', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Client': id }, body: JSON.stringify({ channel, args: args.map(pack) }) });
-      if (res.status === 401) { location.reload(); throw new Error('This phone is no longer paired.'); }
-      const j = await res.json();
-      if (!j.ok) throw new Error(j.error || 'That did not work.');
-      return j.result;
-    },
-    on(channel, fn) {
-      if (!subs.has(channel)) subs.set(channel, new Set());
-      subs.get(channel)!.add(fn);
-      return () => { subs.get(channel)?.delete(fn); };
-    },
-  };
-}
-
-const bridge: Bridge = (window as unknown as { aosBridge?: Bridge }).aosBridge ?? phoneBridge();
-export const onPhone = bridge.kind === 'phone';
+const bridge: Bridge = (window as unknown as { aosBridge: Bridge }).aosBridge;
 export const quiet = !!bridge.quiet; // a hidden test capture: don't open the microphone
+export const os: 'mac' | 'win' = bridge.os === 'mac' ? 'mac' : 'win'; // where the window buttons go
 const call = <T,>(channel: string) => (...args: unknown[]) => bridge.invoke(channel, ...args) as Promise<T>;
-const never = <T,>(value: T) => () => Promise.resolve(value); // desktop-only things, on a phone
 
 const aos = {
   kind: bridge.kind,
   window: {
-    state: onPhone ? never({ full: true, max: false }) : call<{ full: boolean; max: boolean }>('window:state'),
+    state: call<{ full: boolean; max: boolean; min?: boolean }>('window:state'),
     onState: (fn: (s: { full: boolean; max: boolean }) => void) => bridge.on('window:state', fn),
     minimize: call<boolean>('window:minimize'), maximize: call<boolean>('window:maximize'), close: call<boolean>('window:close'),
   },
@@ -65,10 +24,14 @@ const aos = {
     info: call<{ root: string; exists: boolean; notes: number }>('vault:info'),
     tree: call<{ root: string; children: TreeNode[] }>('vault:tree'),
     graph: call<GraphData>('vault:graph'),
+    noteCount: call<number>('vault:noteCount'), // just the number of notes; the graph builds every note and link to tell you the same
     read: (rel: string) => bridge.invoke('vault:read', rel) as Promise<FileContent>,
     skills: call<{ groups: { name: string; skills: SkillInfo[] }[] }>('vault:skills'),
     projects: call<ProjectInfo[]>('vault:projects'),
+    setOverride: (rel: string, type: FileType | null) => bridge.invoke('vault:setOverride', rel, type) as Promise<{ count: number }>,
+    clearOverrides: (projectRel: string) => bridge.invoke('vault:clearOverrides', projectRel) as Promise<{ count: number }>,
     openExternal: (rel: string) => bridge.invoke('vault:openExternal', rel) as Promise<string>,
+    reveal: (rel: string) => bridge.invoke('vault:reveal', rel) as Promise<boolean>,
     onChanged: (fn: (info: { outside: string[] }) => void) => bridge.on('vault:changed', (i) => fn(i || { outside: [] })),
   },
   usage: {
@@ -81,17 +44,21 @@ const aos = {
   },
   voice: {
     status: call<{ available: boolean; muted: boolean }>('voice:status'),
-    mute: onPhone ? (m: boolean) => Promise.resolve(m) : (m: boolean) => bridge.invoke('voice:mute', m) as Promise<boolean>,
+    mute: (m: boolean) => bridge.invoke('voice:mute', m) as Promise<boolean>,
     settings: call<{ speed: number; defaultSpeed: number; min: number; max: number }>('voice:settings'),
     setSpeed: (v: number) => bridge.invoke('voice:setSpeed', v) as Promise<number>,
     preview: call<string | null>('voice:preview'),
   },
   connectors: {
-    summary: (chatId?: string) => bridge.invoke('connectors:summary', chatId) as Promise<ConnectorsSummary>,
-    refresh: (chatId?: string) => bridge.invoke('connectors:refresh', chatId) as Promise<ConnectorsSummary>,
+    summary: call<ConnectorsSummary>('connectors:summary'), refresh: call<ConnectorsSummary>('connectors:refresh'),
     logo: (name: string) => bridge.invoke('connectors:logo', name) as Promise<string | null>,
     setMode: (m: ConnectorMode) => bridge.invoke('connectors:setMode', m) as Promise<ConnectorMode>,
-    setPolicy: (key: string, name: string, p: ConnectorPolicy) => bridge.invoke('connectors:setPolicy', key, name, p) as Promise<boolean>,
+  },
+  tools: {
+    summary: call<ToolsSummary>('tools:summary'),
+    disconnect: (id: string) => bridge.invoke('tools:disconnect', id) as Promise<{ ok: boolean; moved?: string[]; error?: string }>,
+    reconnect: (id: string) => bridge.invoke('tools:reconnect', id) as Promise<{ ok: boolean; error?: string }>,
+    removeCompletely: (id: string) => bridge.invoke('tools:removeCompletely', id) as Promise<{ ok: boolean; deleted?: string[]; error?: string }>,
   },
   insights: {
     health: (chatItems?: number) => bridge.invoke('insights:health', chatItems || 0) as Promise<HealthSummary>,
@@ -99,7 +66,6 @@ const aos = {
     setHourlyRate: (v: number) => bridge.invoke('insights:setHourlyRate', v) as Promise<boolean>,
     setSkillMinutes: (skill: string, v: number | null) => bridge.invoke('insights:setSkillMinutes', skill, v) as Promise<boolean>,
   },
-  // Notes and Action items panels (electron/actions.cjs).
   actions: {
     list: call<{ items: ActionItem[]; open: number }>('actions:list'),
     close: (project: string, raw: string) => bridge.invoke('actions:close', project, raw) as Promise<{ raw: string }>,
@@ -109,8 +75,32 @@ const aos = {
   notes: {
     projects: call<string[]>('notes:projects'),
     list: (project: string | null) => bridge.invoke('notes:list', project) as Promise<NoteEntry[]>,
+    older: (project: string | null) => bridge.invoke('notes:older', project) as Promise<NoteWeek[]>,
     add: (project: string, text: string) => bridge.invoke('notes:add', project, text) as Promise<SavedNote>,
     where: (project: string) => bridge.invoke('notes:where', project) as Promise<{ file: string; actions: string; week: string }>,
+  },
+  search: {
+    query: (q: string, limit?: number, scope?: 'output' | 'all') => bridge.invoke('search:query', q, limit || 12, scope || 'output') as Promise<SearchHit[]>,
+    status: call<SearchStatus>('search:status'),
+    review: (limit?: number) => bridge.invoke('search:review', limit || 40) as Promise<{ path: string; title: string; project: string; date: string; staleWhen: string }[]>,
+    build: (opts?: { dry?: boolean; only?: string; limit?: number }) => bridge.invoke('search:build', opts || {}) as Promise<Record<string, unknown>>,
+  },
+  mail: {
+    state: call<MailState>('mail:state'), pull: call<MailPullResult>('mail:pull'),
+    dismiss: (id: string) => bridge.invoke('mail:dismiss', id) as Promise<boolean>,
+    done: (id: string) => bridge.invoke('mail:done', id) as Promise<boolean>,
+    checkWatch: () => bridge.invoke('mail:checkWatch') as Promise<{ checked: number; total: number; confirmed: number; unconfirmed: number; down: boolean }>,
+    unwatch: (id: string) => bridge.invoke('mail:unwatch', id) as Promise<boolean>,
+    openInOutlook: (id: string) => bridge.invoke('mail:openInOutlook', id) as Promise<boolean>,
+    onEvent: (fn: (e: { type: 'start' | 'progress' | 'done' | 'error' | 'changed'; done?: number; total?: number; error?: string }) => void) => bridge.on('mail:event', fn),
+  },
+  skillRun: {
+    run: (skill: string, model: 'haiku' | 'sonnet') => bridge.invoke('skills:run', skill, model) as Promise<{ ok: boolean; secs: number; note: string }>,
+    stop: (skill: string) => bridge.invoke('skills:stop', skill) as Promise<boolean>,
+    state: call<{ skill: string; since: number }[]>('skills:state'),
+    recent: (limit?: number) => bridge.invoke('skills:recent', limit || 30) as Promise<{ at: string; skill: string; model: string; ok: boolean; secs: number; note: string }[]>,
+    test: call<{ ok: boolean; secs?: number; model?: string; reply?: string; error?: string }>('skills:test'),
+    onEvent: (fn: (e: { type: 'start' | 'done'; skill: string; model?: string; ok?: boolean; secs?: number; note?: string }) => void) => bridge.on('skills:event', fn),
   },
   dreams: {
     state: call<DreamState>('dreams:state'), run: call<boolean>('dreams:run'),
@@ -129,9 +119,12 @@ const aos = {
   brain: {
     status: call<BrainStatus>('brain:status'),
     send: (text: string, speak?: boolean, files?: string[], chat?: string) => bridge.invoke('brain:send', text, !!speak, files || [], chat || null) as Promise<void>,
+    refreshModels: (force?: boolean) => bridge.invoke('brain:refreshModels', !!force) as Promise<{ id: string | null; name: string; note: string; unavailable?: boolean }[]>,
+    setPick: (chat: string, model: string | null, effort: string | null) => bridge.invoke('brain:setPick', chat, model, effort) as Promise<{ model: string | null; effort: string | null }>,
     stop: (chat?: string) => bridge.invoke('brain:stop', chat || null) as Promise<boolean>,
     openChat: (chat: string, sessionId: string | null) => bridge.invoke('brain:openChat', chat, sessionId || null) as Promise<boolean>,
-    approve: (id: number, yes: boolean, question?: string) => bridge.invoke('brain:approve', id, yes, question || '') as Promise<boolean>,
+    approve: (id: number, yes: boolean, all?: boolean, question?: string) => bridge.invoke('brain:approve', id, yes, !!all, question || '') as Promise<boolean>,
+    allowEdits: (v: boolean) => bridge.invoke('brain:allowEdits', v) as Promise<boolean>,
     onEvent: (fn: (e: BrainEvent) => void) => bridge.on('brain:event', fn),
   },
   setup: {
@@ -139,28 +132,33 @@ const aos = {
     set: (patch: Partial<Basics>) => bridge.invoke('setup:set', patch) as Promise<Basics>,
     pickFolder: call<{ path: string; notes: number } | null>('setup:pickFolder'),
     starterVault: call<{ path: string; notes: number }>('setup:starterVault'),
+    discover: call<DiscoverReport>('setup:discover'),
+    applyOkf: (mode: OkfMode) => bridge.invoke('setup:applyOkf', mode) as Promise<OkfResult>,
+    v1: call<V1Look>('setup:v1'),
+    importV1: (want: Record<string, boolean>) => bridge.invoke('setup:importV1', want) as Promise<Record<string, number>>,
     voice: call<{ whisper: boolean; piper: boolean; wakeModel: boolean }>('setup:voice'),
   },
   providers: {
     state: call<ProvidersState>('providers:state'),
-    test: (o: { id: string; key?: string; baseUrl?: string }) => bridge.invoke('providers:test', o) as Promise<{ ok: boolean; models?: string[]; suggested?: Models; error?: string }>,
-    save: (o: { id: string; method: Method; key?: string; baseUrl?: string; models?: Partial<Models>; price?: { in?: number; out?: number } | null }) => bridge.invoke('providers:save', o) as Promise<{ ok: boolean; error?: string }>,
+    test: (o: { id: string; key?: string; baseUrl?: string; style?: GatewayStyle; headers?: string; disableBetas?: boolean; model?: string }) => bridge.invoke('providers:test', o) as Promise<{ ok: boolean; models?: string[]; suggested?: Models; error?: string; kind?: string }>,
+    save: (o: { id: string; method: Method; key?: string; baseUrl?: string; models?: Partial<Models>; price?: { in?: number; out?: number } | null; gateway?: Partial<GatewayExtra> }) => bridge.invoke('providers:save', o) as Promise<{ ok: boolean; error?: string }>,
+    importSettings: call<{ ok: boolean; found?: ImportFound; error?: string }>('providers:importSettings'),
+    applyImport: call<{ ok: boolean; error?: string; check: { ok: boolean; error: string; kind: string; models: string[] } | null }>('providers:applyImport'),
     forgetKey: (id: string) => bridge.invoke('providers:forgetKey', id) as Promise<boolean>,
-    cliStatus: (id: string) => bridge.invoke('providers:cliStatus', id) as Promise<CliStatus>,
-    openLogin: (id: string) => bridge.invoke('providers:openLogin', id) as Promise<{ ok: boolean; error?: string }>,
-    cliInstall: (id: string) => bridge.invoke('providers:cliInstall', id) as Promise<{ ok: boolean; error?: string }>,
-    openKeyPage: (id: string) => bridge.invoke('providers:openKeyPage', id) as Promise<boolean>,
+    cliStatus: () => bridge.invoke('providers:cliStatus') as Promise<CliStatus>,
+    openLogin: () => bridge.invoke('providers:openLogin') as Promise<{ ok: boolean; error?: string }>,
+    openKeyPage: () => bridge.invoke('providers:openKeyPage') as Promise<boolean>,
+  },
+  workers: {
+    state: call<WorkersState>('workers:state'),
+    test: (o: { id: string; key?: string; baseUrl?: string }) => bridge.invoke('workers:test', o) as Promise<{ ok: boolean; models?: string[]; error?: string }>,
+    save: (o: { id: string; key?: string; baseUrl?: string; model?: string; wireApi?: WireApi; goodFor?: string; enabled?: boolean }) => bridge.invoke('workers:save', o) as Promise<{ ok: boolean; error?: string }>,
+    forgetKey: (id: string) => bridge.invoke('workers:forgetKey', id) as Promise<boolean>,
   },
   discord: {
     get: call<{ configured: boolean; token: { saved: boolean; tail: string }; userId: string }>('discord:get'),
     set: (o: { token?: string; userId?: string }) => bridge.invoke('discord:set', o) as Promise<boolean>,
     clear: call<boolean>('discord:clear'),
-  },
-  phone: {
-    get: call<PhoneState>('phone:get'),
-    set: (o: { enabled?: boolean; port?: number }) => bridge.invoke('phone:set', o) as Promise<PhoneState>,
-    unpair: call<PhoneState>('phone:unpair'),
-    qr: (base: string) => bridge.invoke('phone:qr', base) as Promise<{ url: string; qr: string } | null>,
   },
 };
 

@@ -1,4 +1,4 @@
-// the assistant's voice: local Piper TTS, shaped to the voice the user picked on 2026-10-03
+// The assistant's voice: local Piper TTS, shaped to the voice the user picked on 2026-10-03
 // (VCTK speaker p254, English, +2 semitones). Live use: 25% faster was too fast to follow, so
 // 10% faster with longer pauses and a lighter bass boost for clarity; still too quick, so later the
 // same day natural pace (1.0) with slightly longer pauses; heard live and still a little fast, so
@@ -12,7 +12,7 @@
 // (nothing gets faster than about 1.5x) and Piper's random timing varied a sentence by 15% between runs, so the
 // old slider could not be heard. Piper now always speaks at its natural pace with its randomness off, so the same
 // text and the same speed always sound the same, and the slider moves the pace by exactly what it says.
-// Off switch: AGENTIC_OS_VOICE=off. Piper lives in tools/piper (gitignored; see README).
+// Off switch: AOS_VOICE=off. Piper lives in tools/piper (gitignored; see README).
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -29,7 +29,7 @@ const VOICE = {
   model: 'en_GB-vctk-medium',
   speaker: 76, // VCTK p254
   pitch: 1.12, // +2 semitones
-  speed: Number(process.env.AGENTIC_OS_VOICE_SPEED || 0.92), // default: 8% slower than Piper's natural pace
+  speed: Number(process.env.AOS_VOICE_SPEED || 0.92), // default: 8% slower than Piper's natural pace
   bassDb: 3,
 };
 const DEFAULT_SPEED = VOICE.speed;
@@ -51,9 +51,9 @@ const settings = () => ({ speed: speed(), defaultSpeed: DEFAULT_SPEED, min: SPEE
 const PIPER_DIR = require('./paths.cjs').toolsDir('piper');
 const PIPER = path.join(PIPER_DIR, 'piper', 'piper.exe');
 const MODEL = path.join(PIPER_DIR, 'voices', VOICE.model + '.onnx');
-const TMP = path.join(os.tmpdir(), 'agentic-os-voice');
+const TMP = path.join(os.tmpdir(), 'aos-voice');
 
-const available = () => process.env.AGENTIC_OS_VOICE !== 'off' && fs.existsSync(PIPER) && fs.existsSync(MODEL);
+const available = () => process.env.AOS_VOICE !== 'off' && fs.existsSync(PIPER) && fs.existsSync(MODEL);
 
 // ---- audio shaping (same math as tools/voice-samples.cjs) ----
 function readWav(buf) {

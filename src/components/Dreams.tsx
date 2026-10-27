@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
 import type { DreamCard, DreamDimension, DreamState } from '../types';
 
-// Dreams: what the assistant noticed overnight, as four cards. "Do it" sends the card's action to the assistant as a normal
+// Dreams: what Agentic OS noticed overnight, as four cards. "Do it" sends the card's action to Agentic OS as a normal
 // chat message (so edits still get the usual yes/no card) and ticks the card done. Agreed with the user 2026-10-04.
 export const DIM: Record<DreamDimension, { label: string; color: string }> = {
-  chats: { label: 'Chats', color: '#22d3ee' },
-  cost: { label: 'Cost', color: '#f97316' },
-  skills: { label: 'Skills', color: '#c4b5fd' },
-  memory: { label: 'Memory', color: '#fbbf24' },
-  sessions: { label: 'Sessions', color: '#7dd3fc' },
-  workflow: { label: 'Workflow', color: '#a5b4fc' },
-  outside: { label: 'Outside', color: '#86efac' },
-  business: { label: 'Business', color: '#fda4af' },
+  chats: { label: 'Chats', color: '#78a9ff' },
+  cost: { label: 'Cost', color: '#be95ff' },
+  skills: { label: 'Skills', color: '#be95ff' },
+  memory: { label: 'Memory', color: '#f1c21b' },
+  sessions: { label: 'Sessions', color: '#82cfff' },
+  workflow: { label: 'Workflow', color: '#a6c8ff' },
+  outside: { label: 'Outside', color: '#6fdc8c' },
+  business: { label: 'Business', color: '#ffb3b8' },
 };
 const ORDER = Object.keys(DIM) as DreamDimension[];
 
@@ -21,12 +21,6 @@ const hourName = (h: number) => new Date(2000, 0, 1, h).toLocaleTimeString(undef
 const isToday = (t: number) => new Date(t).toDateString() === new Date().toDateString();
 // "Last night" only for a dream that ran overnight; a daytime one (Dream now, or a catch-up) is "Today".
 const whenSaid = (d: { at: number; day: string }) => (isToday(d.at) ? (new Date(d.at).getHours() < 6 ? 'Last night' : 'Today') : `On ${dayName(d.day)}`);
-
-// Faint starfield behind the hero, fixed so it doesn't jump between renders.
-const STARS = (() => {
-  let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
-  return Array.from({ length: 46 }, () => ({ x: r() * 100, y: r() * 100, r: 0.5 + r() * 1.2, o: 0.25 + r() * 0.6 }));
-})();
 
 export default function Dreams({ onClose, onDo, busy }: { onClose(): void; onDo(action: string): void; busy: boolean }) {
   const [s, setS] = useState<DreamState | null>(null);
@@ -51,22 +45,21 @@ export default function Dreams({ onClose, onDo, busy }: { onClose(): void; onDo(
     <div className="viewer-wrap tool" onClick={onClose}>
       <section className="panel viewer" onClick={(e) => e.stopPropagation()}>
         <div className="viewer-head">
-          <span className="lbl strong">Nightly review</span>
-          <span className="small ix-sub">Every night the assistant looks over your week and suggests the few things worth doing</span>
+          <span className="lbl strong">Dreams</span>
+          <span className="small ix-sub">Agentic OS looks over your week every night and hands you the few things worth doing</span>
           <span className="flex" />
-          <button className="ghost small" onClick={onClose} aria-label="Close">✕</button>
+          <button className="ghost small" onClick={onClose} aria-label="Close Dreams">✕</button>
         </div>
         <div className="viewer-body">
           {!s ? <span className="muted small">loading…</span> : (
             <div className="ix">
               <div className={`dream-hero${s.running ? ' running' : ''}`}>
-                <svg className="stars" width="100%" height="100%" aria-hidden>{STARS.map((p, i) => <circle key={i} cx={`${p.x}%`} cy={`${p.y}%`} r={p.r} fill="#cffafe" opacity={p.o} />)}</svg>
                 <div style={{ position: 'relative' }}>
-                  {s.running ? <h2>Reviewing… <em>reading this week's chats</em></h2>
+                  {s.running ? <h2>Dreaming… <em>reading this week's chats</em></h2>
                     : d ? <h2>{whenSaid(d)} I looked at <em>{d.read.questions} questions</em> and found <em>{d.cards.length} {d.cards.length === 1 ? 'thing' : 'things'}</em></h2>
                     : <h2>No dreams yet</h2>}
                   <span className="small muted">
-                    {d ? `Reviewed ${isToday(d.at) ? 'today' : dayName(d.day)} at ${clock(d.at)} · read ${d.read.days} days of questions, skill use and token costs · took ${Math.max(1, Math.round(d.ms / 1000))} seconds${d.dropped ? ` · ${d.dropped} card${d.dropped === 1 ? '' : 's'} dropped for evidence that didn't check out` : ''}`
+                    {d ? `Dreamed ${isToday(d.at) ? 'today' : dayName(d.day)} at ${clock(d.at)} · read ${d.read.days} days of questions, skill use and token costs · took ${Math.max(1, Math.round(d.ms / 1000))} seconds${d.dropped ? ` · ${d.dropped} card${d.dropped === 1 ? '' : 's'} dropped for evidence that didn't check out` : ''}`
                       : 'The first one runs a couple of minutes after the app starts, then every night.'}
                   </span>
                   <div className="dims" aria-label="What the dream looked at">
@@ -76,12 +69,12 @@ export default function Dreams({ onClose, onDo, busy }: { onClose(): void; onDo(
                   </div>
                 </div>
                 <div className="dream-side" style={{ position: 'relative' }}>
-                  <button className="btn go big" onClick={dream} disabled={s.running}>{s.running ? 'Reviewing…' : 'Run it now'}</button>
+                  <button className="btn go big" onClick={dream} disabled={s.running}>☾ {s.running ? 'Dreaming…' : 'Dream now'}</button>
                   <span className="small muted">Next dream: {isToday(s.next) ? 'today' : 'tonight'} {hourName(s.settings.hour)}</span>
                   {!schedule ? (
                     <span className="small muted">Web check <b style={{ color: s.settings.web ? 'var(--acc-hi)' : 'var(--txt3)' }}>{s.settings.web ? 'on' : 'off'}</b> · <button className="linkish" onClick={() => setSchedule(true)}>Change schedule</button></span>
                   ) : (
-                    <span className="small muted">Run at{' '}
+                    <span className="small muted">Dream at{' '}
                       <select className="hour-sel" value={s.settings.hour} onChange={(e) => setHour(Number(e.target.value))} aria-label="Hour to dream">
                         {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{hourName(h)}</option>)}
                       </select>{' '}
@@ -99,7 +92,7 @@ export default function Dreams({ onClose, onDo, busy }: { onClose(): void; onDo(
                   </div>
                   <div className="dcards">
                     {d.cards.map((c) => (
-                      <article key={c.id} className={`dcard${c.status !== 'open' ? ' done' : ''}`} style={{ ['--dc' as string]: DIM[c.dimension]?.color || '#22d3ee' }}>
+                      <article key={c.id} className={`dcard${c.status !== 'open' ? ' done' : ''}`} style={{ ['--dc' as string]: DIM[c.dimension]?.color || '#78a9ff' }}>
                         <div className="dcard-top">
                           <span className="chipx" style={{ ['--dc' as string]: DIM[c.dimension]?.color }}>{DIM[c.dimension]?.label || c.dimension}</span>
                           {c.saves && <span className={`save${c.savesKind === 'money' ? ' money' : ''}`}>{c.saves}</span>}

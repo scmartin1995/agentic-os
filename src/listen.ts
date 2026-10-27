@@ -6,29 +6,19 @@ export type Phase = 'off' | 'loading' | 'waiting' | 'recording' | 'transcribing'
 
 const WAKE_MODEL = 'models://files/vosk-model-small-en-us-0.15.tar.gz';
 // Grammar keeps Vosk to a few phrases, so it can only "hear" these or nothing.
-const GRAMMAR = JSON.stringify(['hey computer', 'okay computer', 'computer', '[unk]']);
+const GRAMMAR = JSON.stringify(['hey computer', 'okay computer', 'assistant', '[unk]']);
 const isWake = (t: string) => /\b(hey|okay|ok) computer\b/.test(t);
-// Stray phrases ("the villains of darkness") got through, so a finished phrase must be heard with this
-// confidence per word. Chosen in Settings (Wake word); strict is the default.
-export type WakeSensitivity = 'strict' | 'normal' | 'loose';
-export const WAKE_SENS_KEY = 'aos-wake-sens';
-const MIN_CONF: Record<WakeSensitivity, number> = { strict: 0.9, normal: 0.8, loose: 0.6 };
-const sensitivity = (): WakeSensitivity => {
-  try { const v = localStorage.getItem(WAKE_SENS_KEY); if (v === 'normal' || v === 'loose') return v; } catch { /* default */ }
-  return 'strict';
-};
-const sure = (words: any[] | undefined, min: number) => !!words?.length && words.every((w) => w.conf >= min);
 
 // 1.2 s cut the user off mid-thought (2026-10-03), so allow a real pause.
 const SILENCE_END_MS = 2000; // stop after this much quiet once speech started
 const NO_SPEECH_MS = 7000; // give up if nothing is said after the wake word
-const FOLLOW_UP_MS = 6000; // after the assistant talks, how long the mic stays open for a reply
+const FOLLOW_UP_MS = 6000; // after Agentic OS talks, how long the mic stays open for a reply
 const MAX_MS = 45000;
 
 export class Listener {
   phase: Phase = 'off';
   wake = false;
-  paused = false; // true while the assistant is talking or working, so they can't wake themselves
+  paused = false; // true while Agentic OS is talking or working, so it can't wake itself
   onPhase: (p: Phase) => void = () => {};
   onText: (t: string) => void = () => {};
   onError: (m: string) => void = () => {};
@@ -77,8 +67,8 @@ export class Listener {
         const { createModel } = await import('vosk-browser');
         const model = await createModel(WAKE_MODEL);
         const rec = new model.KaldiRecognizer(16000, GRAMMAR);
-        rec.setWords(true); // a confidence score per word
-        rec.on('result', (m: any) => this.checkWake(m?.result?.text || '', m?.result?.result));
+        rec.on('partialresult', (m: any) => this.checkWake(m?.result?.partial || ''));
+        rec.on('result', (m: any) => this.checkWake(m?.result?.text || ''));
         this.rec = rec;
       }
       if (this.wake && this.phase !== 'recording' && this.phase !== 'transcribing') this.set('waiting');
@@ -89,12 +79,11 @@ export class Listener {
     }
   }
 
-  private checkWake(text: string, words?: any[]) {
-    if (this.phase === 'waiting' && !this.paused && performance.now() > this.cooldownUntil
-      && isWake(text) && sure(words, MIN_CONF[sensitivity()])) this.begin('wake');
+  private checkWake(text: string) {
+    if (this.phase === 'waiting' && !this.paused && performance.now() > this.cooldownUntil && isWake(text)) this.begin('wake');
   }
 
-  // Open the mic once without the wake word: after the assistant asks a yes/no question, or after they
+  // Open the mic once without the wake word: after Agentic OS asks a yes/no question, or after it
   // finishes talking so the user can reply (followUp: a softer tone and a shorter wait).
   async listenNow(followUp = false) {
     try { await this.ensureMic(); } catch (err) { this.onError(`Microphone unavailable: ${(err as Error).message || err}`); return; }
@@ -187,7 +176,7 @@ export class Listener {
   }
 }
 
-// Short two-note chime so you know the assistant is listening; one soft note for a follow-up.
+// Short two-note chime so you know Agentic OS is listening; one soft note for a follow-up.
 function chime(soft = false) {
   try {
     const ctx = new AudioContext();

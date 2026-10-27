@@ -1,11 +1,14 @@
 import { Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import '@fontsource-variable/geist';
-import '@fontsource-variable/geist-mono';
-
+import '@fontsource/ibm-plex-sans/300.css'; // look B's light headings
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/ibm-plex-mono/400.css';
 import './styles/panels.css';
 import './styles/shell.css';
 import './styles/notes.css';
+import './styles/paper.css'; // look B ("Calm paper"): layout and look, loaded last so it wins
 import './aos'; // builds window.aos (desktop bridge or phone link) before anything draws
 import App from './App';
 import { applyTheme } from './theme';
@@ -19,12 +22,12 @@ class Safety extends Component<{ children: ReactNode }, { err: string | null }> 
   render() {
     if (this.state.err === null) return this.props.children;
     return (
-      <div style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', background: '#060608', color: '#cfe9ee', font: '16px/1.5 Segoe UI, system-ui, sans-serif' }}>
-        <div style={{ maxWidth: 480, margin: 20, padding: '28px 32px', border: '1px solid rgba(227,154,111,.35)', borderRadius: 14 }}>
-          <h1 style={{ margin: '0 0 8px', fontSize: 18, color: '#e39a6f' }}>Something broke in the window</h1>
-          <p style={{ margin: '0 0 14px', color: '#9db4ba' }}>Your chats are saved. Reload to carry on.</p>
-          <p style={{ margin: '0 0 16px', color: '#6c8288', fontSize: 13 }}>{this.state.err}</p>
-          <button onClick={() => location.reload()} style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #6fe3f2', background: 'transparent', color: '#6fe3f2', cursor: 'pointer' }}>Reload</button>
+      <div style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', background: '#161616', color: '#f4f4f4', font: '16px/1.5 Segoe UI, system-ui, sans-serif' }}>
+        <div style={{ maxWidth: 480, margin: 20, padding: '28px 32px', border: '1px solid rgba(190,149,255,.35)', borderRadius: 14 }}>
+          <h1 style={{ margin: '0 0 8px', fontSize: 18, color: '#be95ff' }}>Something broke in the assistant's window</h1>
+          <p style={{ margin: '0 0 14px', color: '#a8a8a8' }}>Your chats are saved. Reload to carry on.</p>
+          <p style={{ margin: '0 0 16px', color: '#8d8d8d', fontSize: 13 }}>{this.state.err}</p>
+          <button onClick={() => location.reload()} style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #78a9ff', background: 'transparent', color: '#78a9ff', cursor: 'pointer' }}>Reload</button>
         </div>
       </div>
     );

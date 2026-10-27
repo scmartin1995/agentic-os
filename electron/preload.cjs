@@ -1,6 +1,5 @@
 // The only bridge between the window and the app. It carries two things: "ask the app to do X" (invoke) and
 // "tell me when Y happens" (on). The friendly, typed `window.aos` object is built on top of it in src/aos.ts,
-// which gives a paired phone the very same object over the local web server instead (electron/remote.cjs).
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 // Test runs only (AOS_FAKE_MIC): the page's microphone becomes a recording played once the wake-word model has loaded.
@@ -25,8 +24,11 @@ if (fakeMic) {
 }
 
 const OK = /^[a-z]+:[A-Za-z0-9]+$/; // "area:action", nothing else
+// Which kind of computer this is, so the window buttons sit where that system puts them. A test capture can pretend (AOS_FAKE_OS).
+const fakeOs = (process.argv.find((a) => a.startsWith('--aos-os=')) || '').slice(9);
 contextBridge.exposeInMainWorld('aosBridge', {
   kind: 'desktop',
+  os: (fakeOs || process.platform) === 'darwin' || fakeOs === 'mac' ? 'mac' : 'win',
   quiet: process.argv.includes('--aos-capture') && !fakeMic, // a test capture: leave the real microphone alone
   invoke: (channel, ...args) => (OK.test(channel) ? ipcRenderer.invoke(channel, ...args) : Promise.reject(new Error('bad channel'))),
   on: (channel, fn) => {

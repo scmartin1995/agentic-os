@@ -42,7 +42,7 @@ function guard(win, { devUrl, blankAfterMs = 6000 } = {}) {
     if (!alive()) return;
     if (devUrl) { win.loadURL(devUrl); return; }
     const pick = [DIST(), PREV()].find((d) => d !== skip && hasPage(d));
-    if (!pick) { showMessage('Waiting for the app files. The app is being rebuilt and will open on its own.', true); return; }
+    if (!pick) { showMessage('Waiting for the app files. Agentic OS is being rebuilt and will open on its own.', true); return; }
     if (why) note(`loading ${pick === DIST() ? 'dist' : 'dist-prev (last good build)'}: ${why}`);
     dir = pick;
     win.loadFile(path.join(pick, 'index.html')).catch(() => {});
@@ -52,7 +52,7 @@ function guard(win, { devUrl, blankAfterMs = 6000 } = {}) {
     if (!isMainFrame || code === -3 || !dir) return; // -3: a navigation we cancelled ourselves
     note(`page failed to load (${code} ${desc}) from ${dir}`);
     const bad = dir;
-    if (++loadFails > 3) { loadFails = 0; showMessage('The app page would not load. Close and reopen the app; if that fails, run npm run build in the app folder.', false); return; }
+    if (++loadFails > 3) { loadFails = 0; showMessage('The app page would not load. Close and reopen Agentic OS; if that fails, run npm run build in the app folder.', false); return; }
     setTimeout(() => start('retry after failed load', { skip: loadFails > 1 ? bad : undefined }), 1000);
   });
 
@@ -61,7 +61,7 @@ function guard(win, { devUrl, blankAfterMs = 6000 } = {}) {
     const now = Date.now();
     crashes = crashes.filter((t) => now - t < 60000).concat(now);
     note(`window process gone: ${d.reason} (code ${d.exitCode}), crash ${crashes.length} in the last minute`);
-    if (crashes.length > 3) { showMessage('The window keeps crashing, usually when the PC is out of memory. Close some programs, then close and reopen the app. Your chats are saved.', false); return; }
+    if (crashes.length > 3) { showMessage('Agentic OS\'s window keeps crashing, usually when the PC is out of memory. Close some programs, then close and reopen Agentic OS. Your chats are saved.', false); return; }
     setTimeout(() => start('reloading after the window process stopped'), 1000);
   });
 
@@ -76,7 +76,7 @@ function guard(win, { devUrl, blankAfterMs = 6000 } = {}) {
       if (drew) { loadFails = 0; return; }
       note(`page drew nothing (${loadedFrom})`);
       if (loadedFrom === DIST() && hasPage(PREV())) start('page drew nothing; using the last good build', { skip: DIST() });
-      else showMessage('The page started but drew nothing. Close and reopen the app. If it stays blank, the last build is broken: run npm run build in the app folder.', false);
+      else showMessage('Agentic OS\'s page started but drew nothing. Close and reopen Agentic OS. If it stays blank, the last build is broken: run npm run build in the app folder.', false);
     }, blankAfterMs);
   });
 

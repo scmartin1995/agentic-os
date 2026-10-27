@@ -1,4 +1,4 @@
-// Lets the assistant move their own window: full screen, maximise, snap left/right, hop monitors.
+// Lets Agentic OS move its own window: full screen, maximise, snap left/right, hop monitors.
 // Exposed to Claude as the in-process MCP tool mcp__aos__window (see claude.cjs).
 const { screen } = require('electron');
 

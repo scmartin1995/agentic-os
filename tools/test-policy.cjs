@@ -79,7 +79,9 @@ try {
   test('his home folder and top-level folders ask', () => {
     assert.strictEqual(asks(bash(`rm -rf ${home}`)), true);
     assert.strictEqual(asks(bash(`rm -rf ${path.join(home, 'Documents')}`)), true);
-    assert.strictEqual(asks(bash(`Remove-Item -Recurse ${path.join(home, 'repos', 'agentic-os')}`)), true);
+    const two = path.join(home, 'aos-policy-test-' + process.pid, 'sub'); // a real folder two levels under home
+    fs.mkdirSync(two, { recursive: true });
+    try { assert.strictEqual(asks(bash(`Remove-Item -Recurse ${two}`)), true); } finally { fs.rmSync(path.dirname(two), { recursive: true, force: true }); }
   });
   test('the whole wiki, and any folder that holds it, asks', () => {
     const vault = require('../electron/vault.cjs').ROOT;

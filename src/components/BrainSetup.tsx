@@ -1,70 +1,61 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CliStatus, Method, Models, ProviderDef, ProvidersState } from '../types';
+import type { CliStatus, GatewayStyle, ImportFound, Method, Models, ProvidersState } from '../types';
 
-// Choosing and signing in to the assistant's brain. Used by onboarding and by Settings > Brain.
-// Two ways in, whichever the provider offers:
-//   - your subscription: the provider's own sign-in opens in a terminal window; this app never sees the login,
-//     it only asks afterwards whether you are signed in
-//   - an API key: checked with a free "list models" call, then saved encrypted on this PC
-// onReady tells the caller whether a working brain is now saved.
-const METHOD_LABEL: Record<Method, string> = { subscription: 'My subscription', key: 'An API key', local: 'On this PC' };
+// Connecting Agentic OS to Claude. Used by onboarding and by Settings > Brain. Two ways in:
+//   - your Claude plan: Claude Code's own sign-in opens in a terminal window; this app never sees the login, it only
+//     asks afterwards whether you are signed in
+//   - a gateway or key: an address and a key from your organisation (or an Anthropic key with no address), checked
+//     with a free call, then saved encrypted on this PC. "Use my Claude Code settings" takes over what Claude Code
+//     already has.
+// onReady tells the caller whether a working connection is now saved.
+const METHOD_LABEL: Record<Method, string> = { subscription: 'My Claude plan', key: 'Gateway or key' };
 
 export default function BrainSetup({ onReady, compact = false }: { onReady?(ok: boolean, label: string): void; compact?: boolean }) {
   const [st, setSt] = useState<ProvidersState | null>(null);
-  const [id, setId] = useState('claude');
   const [method, setMethod] = useState<Method>('subscription');
+  const [rev, setRev] = useState(0); // bumps to redraw the connect form after a settings import
   const load = () => window.aos.providers.state().then((s) => { setSt(s); return s; });
-  useEffect(() => { load().then((s) => { setId(s.current.id); setMethod(s.current.method); }); }, []);
-  const def = st?.catalog.find((p) => p.id === id);
-  const pick = (p: ProviderDef) => { setId(p.id); setMethod(st && st.current.id === p.id ? st.current.method : p.methods[0]); };
+  useEffect(() => { load().then((s) => { setMethod(s.current.method); }); }, []);
+  const def = st?.catalog[0];
   if (!st || !def) return <span className="muted small">loading…</span>;
+  const methods = def.methods;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div className="prov-grid" role="radiogroup" aria-label="Which AI">
-        {st.catalog.map((p) => (
-          <button key={p.id} role="radio" aria-checked={p.id === id} className={`prov${p.id === id ? ' on' : ''}`} style={{ ['--pc' as string]: p.color }} onClick={() => pick(p)}>
-            <span className="logo"><i style={{ WebkitMaskImage: `url(./brains/${p.id}.svg)`, maskImage: `url(./brains/${p.id}.svg)` }} /></span>
-            <b>{p.name}</b>
-            <span className="by">{p.by}</span>
-            {p.level === 'full' && <span className="tagchip">Everything</span>}
-            {st.current.id === p.id && <span className="cur">● in use</span>}
-          </button>
-        ))}
-      </div>
-      <div className="card connect" key={def.id} style={{ ['--pc' as string]: def.color }}>
+      <div className="card connect">
         <h3>
           {def.name}
-          {def.methods.length > 1 && (
-            <span className="cn-seg" role="radiogroup" aria-label="How to sign in">
-              {def.methods.map((m) => <button key={m} role="radio" aria-checked={method === m} className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{METHOD_LABEL[m]}</button>)}
-            </span>
-          )}
+          <span className="cn-seg" role="radiogroup" aria-label="How to connect">
+            {methods.map((m) => <button key={m} role="radio" aria-checked={method === m} className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{METHOD_LABEL[m]}</button>)}
+          </span>
         </h3>
-        {!compact && <p>{def.blurb}{def.level === 'core' ? ' Connected apps and helper agents are Claude-only.' : ''}</p>}
-        {method === 'subscription' ? <Subscription def={def} current={st.current.id === def.id && st.current.method === 'subscription'} onSaved={(label) => { load(); onReady?.(true, label); }} onNotReady={() => onReady?.(false, '')} />
-          : <KeyOrLocal def={def} method={method} st={st} onSaved={(label) => { load(); onReady?.(true, label); }} onNotReady={() => onReady?.(false, '')} />}
+        {!compact && <p>{def.blurb}</p>}
+        {method === 'subscription' ? <Subscription current={st.current.method === 'subscription'} onSaved={(label) => { load(); onReady?.(true, label); }} onNotReady={() => onReady?.(false, '')} />
+          : <>
+            <ImportPanel onApplied={(label) => { load().then(() => setRev((r) => r + 1)); onReady?.(true, label); }} />
+            <GatewayOrKey key={rev} st={st} onSaved={(label) => { load(); onReady?.(true, label); }} onNotReady={() => onReady?.(false, '')} />
+          </>}
       </div>
     </div>
   );
 }
 
-// ---- your own plan, through the provider's own app ----
-function Subscription({ def, current, onSaved, onNotReady }: { def: ProviderDef; current: boolean; onSaved(label: string): void; onNotReady(): void }) {
+// ---- your own Claude plan, through Claude Code ----
+function Subscription({ current, onSaved, onNotReady }: { current: boolean; onSaved(label: string): void; onNotReady(): void }) {
   const [cli, setCli] = useState<CliStatus | null>(null);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [waiting, setWaiting] = useState(false);
   const alive = useRef(true);
   const saved = useRef(false);
-  const label = (s: CliStatus | null) => `${def.name}${s?.plan ? ` ${s.plan[0].toUpperCase()}${s.plan.slice(1)}` : ''} plan`;
+  const label = (s: CliStatus | null) => `Claude${s?.plan ? ` ${s.plan[0].toUpperCase()}${s.plan.slice(1)}` : ''} plan`;
   const use = async () => {
-    const r = await window.aos.providers.save({ id: def.id, method: 'subscription' });
+    const r = await window.aos.providers.save({ id: 'claude', method: 'subscription' });
     if (r.ok) { saved.current = true; onSaved(label(cli)); } else setErr(r.error || '');
   };
   const check = async (quiet = false) => {
     if (!quiet) setBusy('check');
-    const s = await window.aos.providers.cliStatus(def.id).catch(() => null);
+    const s = await window.aos.providers.cliStatus().catch(() => null);
     if (!alive.current) return null;
     setCli(s); setBusy('');
     if (s?.signedIn) {
@@ -73,7 +64,7 @@ function Subscription({ def, current, onSaved, onNotReady }: { def: ProviderDef;
     } else onNotReady();
     return s;
   };
-  useEffect(() => { alive.current = true; saved.current = false; check(); return () => { alive.current = false; }; }, [def.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { alive.current = true; saved.current = false; check(); return () => { alive.current = false; }; }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // After the sign-in window opens, look again every few seconds until it is done.
   useEffect(() => {
     if (!waiting) return;
@@ -82,119 +73,183 @@ function Subscription({ def, current, onSaved, onNotReady }: { def: ProviderDef;
   }, [waiting]); // eslint-disable-line react-hooks/exhaustive-deps
   const signIn = async () => {
     setErr('');
-    const r = await window.aos.providers.openLogin(def.id);
+    const r = await window.aos.providers.openLogin();
     if (r.ok) setWaiting(true); else setErr(r.error || 'Could not open the sign-in.');
   };
-  const install = async () => {
-    setErr(''); setBusy('install');
-    const r = await window.aos.providers.cliInstall(def.id);
-    setBusy('');
-    if (!r.ok) setErr(r.error || 'The install did not finish.');
-    check();
-  };
-  const app = def.cli?.name || 'Claude Code';
 
   return (
     <div className="way">
-      <p>{def.subscription} The sign-in happens in {def.id === 'claude' ? "Anthropic's" : def.id === 'openai' ? "OpenAI's" : "Google's"} own window. The app never sees or stores your login.</p>
+      <p>Your own Claude plan, through Claude Code. The sign-in happens in Anthropic's own window. Agentic OS never sees or stores your login.</p>
       {!cli ? <div className="status-line wait"><i className="dot" />Checking…</div>
-        : cli.signedIn ? <div className="status-line good"><i className="dot" />Signed in{cli.who ? ` as ${cli.who}` : ''}{cli.plan ? ` · ${cli.plan[0].toUpperCase()}${cli.plan.slice(1)} plan` : ''}.{current || saved.current ? ' In use now.' : ''}</div>
-        : !cli.installed ? <div className="status-line off"><i className="dot" />{app} is not on this PC yet.</div>
+        : cli.signedIn ? <div className="status-line good"><i className="dot" />Signed in{cli.who ? ` as ${cli.who}` : ''}{cli.plan ? ` · ${cli.plan[0].toUpperCase()}${cli.plan.slice(1)} plan` : ''}.{current || saved.current ? ' Agentic OS is using this.' : ''}</div>
+        : !cli.installed ? <div className="status-line off"><i className="dot" />The bundled Claude Code was not found. Run npm install in the app folder.</div>
         : waiting ? <div className="status-line wait"><i className="dot" />Waiting for you to finish signing in…</div>
         : <div className="status-line off"><i className="dot" />Not signed in yet{cli.error ? ` (${cli.error})` : ''}.</div>}
-      {cli?.signedIn && !current && !saved.current && <div className="setting-actions"><button className="cta" onClick={use}>Use {def.name}</button></div>}
+      {cli?.signedIn && !current && !saved.current && <div className="setting-actions"><button className="cta" onClick={use}>Use my Claude plan</button></div>}
       {cli && !cli.signedIn && (
         <div className="setting-actions">
-          {!cli.installed && def.cli && <button className="cta" onClick={install} disabled={busy === 'install'}>{busy === 'install' ? 'Installing…' : `Install ${app}`}</button>}
-          {cli.installed && <button className="cta" onClick={signIn}>{waiting ? 'Open sign-in again' : `Sign in with ${def.name}`}</button>}
+          {cli.installed && <button className="cta" onClick={signIn}>{waiting ? 'Open sign-in again' : 'Sign in with Claude'}</button>}
           <button className="ghost" onClick={() => check()} disabled={busy === 'check'}>{busy === 'check' ? 'Checking…' : 'Check again'}</button>
         </div>
       )}
       {cli && !cli.signedIn && cli.installed && (
         <ol className="steps-list">
-          {def.id === 'claude' ? <><li>A terminal window opens with Claude Code's sign-in. If it only shows a prompt, type <span className="mono">/login</span>.</li><li>Finish in your browser, then close that window.</li></>
-            : def.id === 'openai' ? <><li>A terminal window opens and sends you to ChatGPT's sign-in in your browser.</li><li>Finish there, then close the terminal window.</li></>
-            : <><li>A terminal window opens Antigravity. Sign in with your Google account and finish in your browser.</li><li>Type <span className="mono">/quit</span>, then close the window.</li></>}
+          <li>A terminal window opens with Claude Code's sign-in. If it only shows a prompt, type <span className="mono">/login</span>.</li>
+          <li>Finish in your browser, then close that window.</li>
         </ol>
       )}
-      {!cli?.installed && def.cli && <p className="small">Install runs <span className="mono">{def.cli.install ? def.cli.install.split(' -e')[0] : `npm install -g ${def.cli.pkg}`}</span>, the provider's official app.</p>}
-      {def.level === 'core' && <div className="notice">On a {def.name} subscription, {app} does the work inside its own sandbox (it can edit files in your notes folder only). The app's ask-first cards and edit backups can't reach inside it. {def.id === 'antigravity' ? 'Chat, reading and writing notes were tried against the real Antigravity CLI; the ask-first cards were not.' : `This route has not been tested against the real ${app} yet; an API key is the tested way to use ${def.name}.`}</div>}
       {err && <div className="notice">{err}</div>}
     </div>
   );
 }
 
-// ---- an API key, or a model server on this PC ----
-function KeyOrLocal({ def, method, st, onSaved, onNotReady }: { def: ProviderDef; method: Method; st: ProvidersState; onSaved(label: string): void; onNotReady(): void }) {
-  const cur = st.current.id === def.id ? st.current : null;
+// ---- a gateway address and key, or an Anthropic key ----
+function GatewayOrKey({ st, onSaved, onNotReady }: { st: ProvidersState; onSaved(label: string): void; onNotReady(): void }) {
+  const cur = st.current;
   const [key, setKey] = useState('');
-  const [base, setBase] = useState(cur?.baseUrl || def.baseUrl || '');
-  const [models, setModels] = useState<string[] | null>(null);
-  const [pick, setPick] = useState<Models>(cur?.models || { light: '', standard: '', strong: '' });
+  const [base, setBase] = useState(cur.baseUrl || '');
+  // The three model names are not asked for here any more (the model is chosen per chat, under the input box). Whatever was saved
+  // before is kept and passed back untouched, and the gateway's own suggestions only fill gaps, so Auto keeps working.
+  const [pick, setPick] = useState<Models>(cur.models || { light: '', standard: '', strong: '' });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const hasSaved = !!cur?.key.saved && method === 'key';
-  const isClaude = def.id === 'claude';
-  useEffect(() => { if (!(cur && cur.method === method && (isClaude || cur.models.standard) && (method === 'local' || cur.key.saved))) onNotReady(); }, [def.id, method]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hasSaved = cur.key.saved && cur.method === 'key';
+  // Gateway extras: which format the gateway speaks, extra headers, a switch for gateways that reject some requests, a certificate file.
+  const [style, setStyle] = useState<GatewayStyle>(cur.gateway.style || 'anthropic');
+  const [headers, setHeaders] = useState('');
+  const [betas, setBetas] = useState(!!cur.gateway.disableBetas);
+  const [cert, setCert] = useState(cur.gateway.certFile || '');
+  const [region, setRegion] = useState(cur.gateway.region || '');
+  const [keyKind, setKeyKind] = useState<'token' | 'bedrock-key'>(cur.gateway.keyKind || 'token');
+  const [open, setOpen] = useState(!!(cur.gateway.headerNames.length || cur.gateway.disableBetas || cur.gateway.certFile || cur.gateway.style === 'bedrock'));
+  const gwOpts = { gateway: { style, disableBetas: betas, certFile: cert.trim(), region: region.trim(), keyVar: keyKind === 'bedrock-key' ? 'AWS_BEARER_TOKEN_BEDROCK' : 'ANTHROPIC_AUTH_TOKEN', ...(headers.trim() ? { headers } : {}) } };
+  useEffect(() => { if (!(cur.method === 'key' && cur.key.saved)) onNotReady(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const test = async () => {
     setBusy(true); setMsg(null);
-    const r = await window.aos.providers.test({ id: def.id, key: key.trim(), baseUrl: base.trim() });
+    const r = await window.aos.providers.test({ id: 'claude', key: key.trim(), baseUrl: base.trim(), style, disableBetas: betas, model: pick.standard || pick.light || pick.strong || undefined, ...(headers.trim() ? { headers } : {}) });
     setBusy(false);
-    if (!r.ok) { setMsg({ ok: false, text: r.error || 'That did not work.' }); setModels(null); return; }
+    if (!r.ok) { setMsg({ ok: false, text: r.error || 'That did not work.' }); return; }
     const list = r.models || [];
-    setModels(list);
     const sug = r.suggested || { light: '', standard: '', strong: '' };
     const next = { light: list.includes(pick.light) ? pick.light : sug.light, standard: list.includes(pick.standard) ? pick.standard : sug.standard, strong: list.includes(pick.strong) ? pick.strong : sug.strong };
     setPick(next);
-    await save(next, list.length);
+    await save(next);
   };
-  const save = async (m: Models, count?: number) => {
-    const r = await window.aos.providers.save({ id: def.id, method, key: key.trim() || undefined, baseUrl: base.trim(), models: m });
+  const save = async (m: Models) => {
+    const r = await window.aos.providers.save({ id: 'claude', method: 'key', key: key.trim() || undefined, baseUrl: base.trim(), models: m, ...gwOpts });
     if (!r.ok) { setMsg({ ok: false, text: r.error || 'Could not save.' }); return; }
-    setKey('');
-    setMsg({ ok: true, text: isClaude ? 'Key works and is saved. The app picks the Claude model for each question.' : `Connected${count != null ? `: ${count} models found` : ''}. Saved.` });
-    if (isClaude || m.standard) onSaved(`${def.name}${method === 'local' ? '' : ' API key'}`); else onNotReady();
+    setKey(''); setHeaders('');
+    setMsg({ ok: true, text: base.trim() ? 'The gateway answered and the settings are saved.' : 'Key works and is saved. Agentic OS picks the Claude model for each question itself.' });
+    onSaved(base.trim() ? 'Claude gateway' : 'Claude API key');
   };
-  const choose = (tier: keyof Models, v: string) => { const m = { ...pick, [tier]: v }; setPick(m); save(m); };
 
   return (
     <div className="way">
-      {(def.id === 'custom' || def.id === 'local') && (
-        <label className="lab">Address of the service
-          <input className="field mono" value={base} onChange={(e) => setBase(e.target.value)} placeholder={def.id === 'local' ? 'http://localhost:11434/v1' : 'https://…/v1'} spellCheck={false} />
-          {def.presets && <span className="setting-actions" style={{ marginTop: 4 }}>{def.presets.map((p) => <button key={p.name} className="pill" onClick={() => setBase(p.url)}>{p.name}</button>)}</span>}
-        </label>
-      )}
-      {method === 'key' && (
-        <label className="lab">{hasSaved ? `A key is saved${cur?.key.tail ? ` (ends in ${cur.key.tail})` : ''}. Paste a new one to replace it.` : 'Paste your API key'}
-          <span className="keyrow">
-            <input className="field" type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={def.keyLooks || 'key'} autoComplete="off" spellCheck={false}
-              onKeyDown={(e) => { if (e.key === 'Enter') test(); }} />
-            {def.keyUrl && <button className="ghost" onClick={() => window.aos.providers.openKeyPage(def.id)} title="Opens the provider's key page in your browser">Get a key</button>}
-          </span>
-        </label>
-      )}
+      <label className="lab">Gateway address (leave empty if you have an Anthropic key)
+        <input className="field mono" value={base} onChange={(e) => setBase(e.target.value)} placeholder="https://your-gateway.example.com" spellCheck={false} />
+      </label>
+      <label className="lab">{hasSaved ? `A key is saved${cur.key.tail ? ` (ends in ${cur.key.tail})` : ''}. Paste a new one to replace it.` : 'Paste your key'}
+        <span className="keyrow">
+          <input className="field" type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="the key you were given" autoComplete="off" spellCheck={false}
+            onKeyDown={(e) => { if (e.key === 'Enter') test(); }} />
+          {!base.trim() && <button className="ghost" onClick={() => window.aos.providers.openKeyPage()} title="Opens Anthropic's key page in your browser">Get a key</button>}
+        </span>
+      </label>
+      <details className="adv" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+        <summary>Advanced: format, extra headers, certificate</summary>
+        <div className="adv-body">
+          <label className="lab">What the gateway speaks
+            <select className="field" value={style} onChange={(e) => setStyle(e.target.value as GatewayStyle)}>
+              <option value="anthropic">Anthropic format (most gateways)</option>
+              <option value="bedrock">Amazon Bedrock format</option>
+            </select>
+            {style === 'bedrock' && <span className="small muted">A Bedrock-style gateway has no model list, so choose models in the picker under the chat box (Auto, or type the exact name). Agentic OS does not sign in to AWS: the gateway holds the cloud credentials.</span>}
+          </label>
+          {style === 'bedrock' && (
+            <>
+              <label className="lab">The key you were given is
+                <select className="field" value={keyKind} onChange={(e) => setKeyKind(e.target.value as 'token' | 'bedrock-key')}>
+                  <option value="token">A token for the gateway (sent as a bearer token)</option>
+                  <option value="bedrock-key">An Amazon Bedrock API key</option>
+                </select>
+              </label>
+              <label className="lab">AWS region (only if you were given one)
+                <input className="field mono" value={region} onChange={(e) => setRegion(e.target.value)} placeholder="us-east-1" spellCheck={false} />
+              </label>
+            </>
+          )}
+          <label className="lab">Extra headers{cur.gateway.headerNames.length ? ` (saved: ${cur.gateway.headerNames.join(', ')}; type here to replace them)` : ''}
+            <textarea className="field mono" rows={2} value={headers} onChange={(e) => setHeaders(e.target.value)} placeholder={'X-Org-Route: prod'} spellCheck={false} />
+            <span className="small muted">One per line, as Name: Value. Only if the gateway's owner asked for one. Not for the key.</span>
+            {!!cur.gateway.headerNames.length && <button className="pill" onClick={async () => { await window.aos.providers.save({ id: 'claude', method: 'key', baseUrl: base.trim(), gateway: { headers: '' } }); onSaved('Claude gateway'); }}>Remove saved headers</button>}
+          </label>
+          <label className="check"><input type="checkbox" checked={betas} onChange={(e) => setBetas(e.target.checked)} />My gateway rejects some requests
+            <span className="small muted">Turn on if answers fail with "Extra inputs are not permitted" or similar. Switches off Claude Code's newest request fields.</span>
+          </label>
+          <label className="lab">Certificate file (company networks)
+            <input className="field mono" value={cert} onChange={(e) => setCert(e.target.value)} placeholder="C:\certs\company-root.pem" spellCheck={false} />
+            <span className="small muted">Only if answers fail with a certificate error. The file is the company root certificate, from the gateway's owner.</span>
+          </label>
+        </div>
+      </details>
       <div className="setting-actions">
-        <button className="cta" onClick={test} disabled={busy || (method === 'key' && !key.trim() && !hasSaved)}>{busy ? 'Checking…' : method === 'local' ? 'Find my models' : key.trim() || !hasSaved ? 'Check and save' : 'Check the saved key'}</button>
-        <span className="small muted">{method === 'key' ? `Checked with a free call, then saved ${st.encrypted ? 'encrypted on this PC' : 'on this PC'}. It is only ever sent to ${def.id === 'custom' ? 'that address' : def.by}.` : 'Nothing leaves this computer.'}</span>
+        <button className="cta" onClick={test} disabled={busy || (!key.trim() && !hasSaved && !(style === 'bedrock' && base.trim()))}>{busy ? 'Checking…' : key.trim() || !hasSaved ? 'Check and save' : 'Check the saved key'}</button>
+        <span className="small muted">Checked with a free call, then saved {st.encrypted ? 'encrypted on this PC' : 'on this PC'}. It is only ever sent to {base.trim() ? 'that address' : 'Anthropic'}.</span>
       </div>
       {msg && <div className={`status-line ${msg.ok ? 'good' : 'off'}`}><i className="dot" />{msg.text}</div>}
-      {!isClaude && (models || cur?.models.standard) && (
-        <div className="formgrid">
-          {([['standard', 'Everyday model'], ['light', 'Quick questions'], ['strong', 'Hard problems (asks first)']] as const).map(([tier, label]) => (
-            <label key={tier}>{label}
-              {models ? (
-                <select className="field" value={pick[tier]} onChange={(e) => choose(tier, e.target.value)}>
-                  {tier !== 'standard' && <option value="">{tier === 'light' ? 'Same as everyday' : 'None'}</option>}
-                  {models.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
-              ) : <input className="field mono" value={pick[tier]} onChange={(e) => setPick({ ...pick, [tier]: e.target.value })} onBlur={() => save(pick)} spellCheck={false} />}
-            </label>
-          ))}
+      {/* No model boxes here: the model is chosen in the picker under the chat input, where any name can be typed. */}
+    </div>
+  );
+}
+
+// ---- take over what Claude Code on this PC is already set up with ----
+// Reads ~/.claude/settings.json (read only), shows what was found without the key, and saves it when the user confirms.
+function ImportPanel({ onApplied }: { onApplied(label: string): void }) {
+  const [found, setFound] = useState<ImportFound | null>(null);
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const look = async () => {
+    setBusy('look'); setMsg(null);
+    const r = await window.aos.providers.importSettings();
+    setBusy('');
+    if (r.ok && r.found) setFound(r.found); else { setFound(null); setMsg({ ok: false, text: r.error || 'Nothing found.' }); }
+  };
+  const use = async () => {
+    setBusy('use');
+    const r = await window.aos.providers.applyImport();
+    setBusy(''); setFound(null);
+    if (!r.ok) { setMsg({ ok: false, text: r.error || 'Could not save that.' }); return; }
+    if (r.check && !r.check.ok) setMsg({ ok: false, text: `Taken over and saved, but the check failed. ${r.check.error}` });
+    else setMsg({ ok: true, text: r.check ? `Taken over and the gateway answered${r.check.models.length ? `: ${r.check.models.length} Claude models found` : ''}.` : 'Taken over.' });
+    onApplied('Claude gateway');
+  };
+  return (
+    <div className="way">
+      <div className="setting-actions">
+        <button className="cta" onClick={look} disabled={busy !== ''}>{busy === 'look' ? 'Reading…' : 'Use my Claude Code settings'}</button>
+        <span className="small muted">Reads the setup Claude Code already has on this PC. It changes nothing there.</span>
+      </div>
+      {found && (
+        <div className="found">
+          <b>Found in your Claude Code settings</b>
+          <ul>
+            <li>Address: <span className="mono">{found.baseUrl || '(none: Anthropic directly)'}</span> · {found.style === 'bedrock' ? 'Amazon Bedrock format' : 'Anthropic format'}</li>
+            <li>Key: {found.keyFrom ? `found in ${found.keyFrom} (not shown)` : 'none found'}</li>
+            {found.headerNames.length > 0 && <li>Extra headers: {found.headerNames.join(', ')}</li>}
+            {(found.models.light || found.models.standard || found.models.strong) && <li>Models: {[found.models.light && `quick ${found.models.light}`, found.models.standard && `everyday ${found.models.standard}`, found.models.strong && `hard ${found.models.strong}`].filter(Boolean).join(' · ')}</li>}
+            {found.region && <li>AWS region: {found.region}</li>}
+            {found.switches.length > 0 && <li>Switches: {found.switches.join(', ')}</li>}
+            {found.extras.length > 0 && <li>Also taking over: {found.extras.join(', ')}</li>}
+          </ul>
+          {found.notes.map((n) => <div key={n} className="notice">{n}</div>)}
+          <div className="setting-actions">
+            <button className="cta" onClick={use} disabled={busy !== ''}>{busy === 'use' ? 'Saving…' : 'Use these'}</button>
+            <button className="ghost" onClick={() => setFound(null)} disabled={busy !== ''}>Cancel</button>
+          </div>
         </div>
       )}
-      {def.id === 'local' && <p className="small">Start Ollama (or LM Studio's local server) first. Pick a model that can use tools, or the assistant can only chat.</p>}
+      {msg && <div className={`status-line ${msg.ok ? 'good' : 'off'}`}><i className="dot" />{msg.text}</div>}
     </div>
   );
 }

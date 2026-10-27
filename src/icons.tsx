@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 
 const PATHS: Record<string, ReactNode> = {
   home: <><circle cx="12" cy="12" r="2.4" /><circle cx="5" cy="6" r="1.6" /><circle cx="19" cy="7" r="1.6" /><circle cx="6" cy="18.5" r="1.6" /><circle cx="18.5" cy="18" r="1.6" /><path d="M10.2 10.6 6.2 7.2M14 10.8l3.8-2.8M10.4 13.8l-3.3 3.5M13.8 13.7l3.5 3.2" /></>,
+  actions: <><circle cx="12" cy="12" r="8.5" /><path d="m8.4 12.2 2.4 2.4 4.8-5" /></>,
+  notes: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></>,
   projects: <><rect x="3" y="4" width="8" height="7" rx="1.6" /><rect x="13" y="4" width="8" height="7" rx="1.6" /><rect x="3" y="13" width="8" height="7" rx="1.6" /><rect x="13" y="13" width="8" height="7" rx="1.6" /></>,
   skills: <><path d="M12 3l2.5 5.3 5.8.8-4.2 4 1 5.7L12 16.1 6.9 18.8l1-5.7-4.2-4 5.8-.8z" /></>,
   dreams: <><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" /><path d="M16 4.5v3M14.5 6h3" /></>,
@@ -13,6 +15,7 @@ const PATHS: Record<string, ReactNode> = {
   settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.5-2-3.4-2.3 1a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.6a7.6 7.6 0 0 0-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.6 7.6 0 0 0 0 3l-2 1.5 2 3.4 2.3-1a7.6 7.6 0 0 0 2.6 1.5l.5 2.6h4l.5-2.6a7.6 7.6 0 0 0 2.6-1.5l2.3 1 2-3.4z" /></>,
   files: <><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></>,
   phone: <><rect x="7" y="2.5" width="10" height="19" rx="2.4" /><path d="M11 18.5h2" /></>,
+  mail: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="m4 7.5 8 6 8-6" /></>,
   chat: <><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-6l-4.5 3.5V17H6a2 2 0 0 1-2-2z" /></>,
   tools: <><circle cx="6" cy="6" r="2" /><circle cx="18" cy="6" r="2" /><circle cx="6" cy="18" r="2" /><circle cx="18" cy="18" r="2" /><circle cx="12" cy="12" r="2" /></>,
   search: <><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
@@ -29,9 +32,8 @@ const PATHS: Record<string, ReactNode> = {
   brain: <><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 0V7a3 3 0 0 0-3-3zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 0" /></>,
   discord: <><path d="M8 7c2.6-1 5.4-1 8 0l1.5 9.5c-1 .9-2.3 1.5-3.5 1.8l-.8-1.6M8 7 6.5 16.5c1 .9 2.3 1.5 3.5 1.8l.8-1.6M9 16.200c2 .6 4 .6 6 0" /><circle cx="9.7" cy="12" r="1" /><circle cx="14.3" cy="12" r="1" /></>,
   power: <><path d="M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0" /></>,
+  chev: <><path d="m14.5 6-6 6 6 6" /></>,
   check: <><path d="m5 12.500 4.500 4.500L19 7" /></>,
-  actions: <><circle cx="12" cy="12" r="8.5" /><path d="m8.4 12.2 2.4 2.4 4.8-5" /></>,
-  notes: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></>,
 };
 
 export type IconName = keyof typeof PATHS;

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ActionItem, NoteEntry } from '../types';
+import type { ActionItem, NoteEntry, NoteWeek } from '../types';
 import { projectColor } from '../colors';
 import { PREFIX, dayLong, errText, fromYmd, hhmm, mondayOf, pretty, ymd } from '../notesShared';
 
-// Notes: jot a note into a project's notes.md (projects/<P>/notes.md, or inbox/notes.md), stamped with the date and
-// time. A note that starts with "action item" is also added to that project's action-items.md. See electron/actions.cjs.
+// Notes: jot a note into a project's raw notes, stamped with the date and time, one file per week
+// (projects/<P>/input/notes/2026-W41.md, or <P>/Raw/Notes/261005_Week_Notes.md in an OKF project). A note that starts
+// with "action item" is also added to Action items (in an OKF project, as a new item in its register).
 const LAST = 'aos-notes-project';
 const remembered = () => { try { return localStorage.getItem(LAST) || ''; } catch { return ''; } };
 
@@ -15,6 +16,7 @@ export default function Notes({ onClose, onOpen, onActions, onChanged }: { onClo
   const [saving, setSaving] = useState(false);
   const [file, setFile] = useState('');
   const [entries, setEntries] = useState<NoteEntry[] | null>(null);
+  const [older, setOlder] = useState<NoteWeek[]>([]);
   const [acts, setActs] = useState<ActionItem[]>([]);
   const [all, setAll] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
@@ -35,6 +37,7 @@ export default function Notes({ onClose, onOpen, onActions, onChanged }: { onClo
   const load = () => {
     if (!cur) return;
     window.aos.notes.list(all ? null : cur).then(setEntries).catch(() => setEntries([]));
+    window.aos.notes.older(all ? null : cur).then(setOlder).catch(() => setOlder([]));
     window.aos.actions.list().then((r) => setActs(r.items)).catch(() => {});
   };
   useEffect(() => {
@@ -74,6 +77,25 @@ export default function Notes({ onClose, onOpen, onActions, onChanged }: { onClo
   const thisWeek = mondayOf(now).getTime();
   let lastWeek: number | null = null, lastDay: string | null = null;
 
+  const entry = (n: NoteEntry) => {
+    const pm = n.text.match(PREFIX);
+    const st = status(n);
+    return (
+      <div className={`nt-entry${flash === `${n.project}|${n.date}|${n.time}` ? ' flash' : ''}`}>
+        <span className="mono nt-time">{n.time}</span>
+        <div>
+          <div className="nt-text">{pm ? <><span className="nt-pfx">{pm[0].trim()}</span> {n.text.slice(pm[0].length)}</> : n.text}</div>
+          {(all || st) && (
+            <div className="nt-tags">
+              {all && <span className="nt-tag proj" style={{ color: projectColor(n.project) }}>{n.name}</span>}
+              {st && <button className={`nt-tag${st === 'closed' ? ' closed' : ''}`} onClick={onActions} title="Open Action items">action item, {st}</button>}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="viewer-wrap tool" onClick={onClose}>
       <section className="panel viewer" onClick={(e) => e.stopPropagation()}>
@@ -110,7 +132,7 @@ export default function Notes({ onClose, onOpen, onActions, onChanged }: { onClo
                 <h3 className="lbl">This week and last</h3>
                 <label className="nt-tog"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> All projects</label>
               </div>
-              {entries && entries.length === 0 && <div className="ix-empty">No notes in {all ? 'any project' : pretty(cur)} this week or last. Older notes stay in the project's notes.md.</div>}
+              {entries && entries.length === 0 && <div className="ix-empty">No notes in {all ? 'any project' : pretty(cur)} this week or last.{older.length > 0 ? ' Earlier weeks are below.' : ''}</div>}
               {(entries || []).map((n) => {
                 const d = fromYmd(n.date);
                 const wk = mondayOf(d).getTime();
@@ -118,8 +140,6 @@ export default function Notes({ onClose, onOpen, onActions, onChanged }: { onClo
                 const dayHead = weekHead || n.date !== lastDay;
                 lastWeek = wk; lastDay = n.date;
                 const end = new Date(wk); end.setDate(end.getDate() + 6);
-                const pm = n.text.match(PREFIX);
-                const st = status(n);
                 return (
                   <div key={`${n.project}|${n.date}|${n.time}|${n.text.slice(0, 20)}`}>
                     {weekHead && (
@@ -128,21 +148,41 @@ export default function Notes({ onClose, onOpen, onActions, onChanged }: { onClo
                       </div>
                     )}
                     {dayHead && <div className="nt-day">{dayLong(d)}{n.date === ymd(now) ? ' (today)' : ''}</div>}
-                    <div className={`nt-entry${flash === `${n.project}|${n.date}|${n.time}` ? ' flash' : ''}`}>
-                      <span className="mono nt-time">{n.time === "00:00" ? "" : n.time}</span>
-                      <div>
-                        <div className="nt-text">{pm ? <><span className="nt-pfx">{pm[0].trim()}</span> {n.text.slice(pm[0].length)}</> : n.text}</div>
-                        {(all || st) && (
-                          <div className="nt-tags">
-                            {all && <span className="nt-tag proj" style={{ color: projectColor(n.project) }}>{n.name}</span>}
-                            {st && <button className={`nt-tag${st === 'closed' ? ' closed' : ''}`} onClick={onActions} title="Open Action items">action item, {st}</button>}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    {entry(n)}
                   </div>
                 );
               })}
+
+              {older.length > 0 && (
+                <div className="nt-older">
+                  <h3 className="lbl">Earlier</h3>
+                  {older.map((w) => {
+                    const mon = fromYmd(w.monday);
+                    const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+                    const files = [...new Set(w.entries.map((n) => n.file))];
+                    let day: string | null = null;
+                    return (
+                      <details key={w.monday} className="nt-oweek">
+                        <summary>
+                          <span>{dayLong(mon)} to {dayLong(sun)} {sun.getFullYear()}</span>
+                          <span className="nt-count">{w.entries.length} {w.entries.length === 1 ? 'note' : 'notes'}</span>
+                        </summary>
+                        {!all && files.length === 1 && <button className="mono linkish nt-ofile" onClick={() => onOpen(files[0])} title="Open this week's notes file">{files[0]}</button>}
+                        {w.entries.map((n) => {
+                          const head = n.date !== day;
+                          day = n.date;
+                          return (
+                            <div key={`${n.project}|${n.date}|${n.time}|${n.text.slice(0, 20)}`}>
+                              {head && <div className="nt-day">{dayLong(fromYmd(n.date))}</div>}
+                              {entry(n)}
+                            </div>
+                          );
+                        })}
+                      </details>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>

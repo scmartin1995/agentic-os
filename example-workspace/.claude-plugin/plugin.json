@@ -1,5 +1,0 @@
-{
-  "name": "workspace",
-  "version": "0.1.0",
-  "description": "Skills kept in this workspace (skills/<name>/SKILL.md), loaded by Agentic OS so Claude can use them."
-}

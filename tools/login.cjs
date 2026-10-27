@@ -11,5 +11,5 @@ if (!exe) { console.error('Could not find the bundled Claude Code binary in', di
 console.log('Starting Claude Code. Type /login, sign in in the browser, then /exit.\n');
 const env = { ...process.env };
 delete env.ANTHROPIC_API_KEY; // make sure it signs in with the claude.ai account, not a key
-env.DISABLE_AUTOUPDATER = '1'; // never let it rename itself mid-update (it once broke the app); update via npm
+env.DISABLE_AUTOUPDATER = '1'; // never let it rename itself mid-update (broke Agentic OS on 2026-10-04); update via npm
 spawnSync(path.join(dir, exe), [], { stdio: 'inherit', env });

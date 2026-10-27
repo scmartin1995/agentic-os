@@ -1,33 +1,24 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Basics, AssistantState, BrainEvent, BrainStatus, ChatSummary, DreamEvent, GraphData, TreeNode, UsageV2 } from './types';
-import { onPhone, quiet } from './aos';
-import { Voice } from './audio';
-import { getTheme, setTheme, type Theme } from './theme';
-import { getGraphShape, setGraphShape, type GraphShape } from './graphShape';
-import { groupColor, LEGEND } from './colors';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ActionItem, Basics, OrbState, BrainEvent, BrainStatus, ChatSummary, DreamEvent, ProjectInfo, TreeNode } from './types';
+import { os } from './aos';
+import WindowButtons from './components/WindowButtons';
+import { getTheme, setTheme } from './theme';
 import Icon from './icons';
-import Assistant from './components/Assistant';
-import Chat, { type Attached, type ChatItem } from './components/Chat';
-import Files from './components/Files';
+import Orb from './components/Orb';
+import Chat, { type Attached, type ChatItem, type ModelPick } from './components/Chat';
 import Viewer from './components/Viewer';
-import Charge from './components/Charge';
 import { Rail, Tabs, ToolsSheet, type Tab, type Tool } from './components/Nav';
 import Palette, { type Action } from './components/Palette';
 import Onboarding from './components/Onboarding';
-import Dashboard from './components/Dashboard';
-import Settings from './components/Settings';
-import Skills from './components/Skills';
+import Settings, { type Page as SettingsPage } from './components/Settings';
+import Mail from './components/Mail';
 import Projects from './components/Projects';
 import Dreams from './components/Dreams';
-import Health from './components/Health';
 import Connectors from './components/Connectors';
 import Actions from './components/Actions';
 import Notes from './components/Notes';
-import { Listener, type Phase } from './listen';
 
-// The 3D graph is the heaviest thing in the app, so it loads on its own: straight away on a PC, and on a phone only
-// if the Graph tab is opened.
-const Graph = lazy(() => import('./components/Graph'));
+import Ring from './components/Ring';
 
 // Several chats run at once. Each keeps its own messages, read trail, session and busy/approval state;
 // the window shows one at a time and the others carry on in the background.
@@ -35,9 +26,10 @@ interface ChatState {
   items: ChatItem[]; read: string[]; wrote: string[];
   busy: boolean;
   sessionId: string | null;
+  pick: ModelPick; // what the picker by the input box is set to for this chat
   unread: boolean; // finished, or needs an answer, while it was off screen
 }
-const blank = (): ChatState => ({ items: [], read: [], wrote: [], busy: false, sessionId: null, unread: false });
+const blank = (): ChatState => ({ items: [], read: [], wrote: [], busy: false, sessionId: null, pick: { model: null, effort: null }, unread: false });
 // The approval card a chat is waiting on, if any (the latest one: several helpers can ask at once).
 const pendingIn = (xs: ChatItem[]) => { for (let i = xs.length - 1; i >= 0; i--) { const a = xs[i].approval; if (a && a.answer === undefined && a.id >= 0) return a.id; } return null; };
 const newId = () => Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
@@ -46,13 +38,24 @@ const chatTitle = (xs: ChatItem[]) => {
   const first = xs.find((x) => x.role === 'you');
   return (first?.text || (first?.files?.length ? 'Attached files' : 'Chat')).replace(/\s+/g, ' ').slice(0, 70);
 };
-const greeting = () => { const h = new Date().getHours(); return h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
+const ago = (iso: string | null) => {
+  if (!iso) return '';
+  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  return Number.isNaN(d) ? '' : d <= 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days`;
+};
+const agoMs = (ms: number) => {
+  if (!ms) return '';
+  const d = Math.floor((Date.now() - ms) / 86400000);
+  return d <= 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days`;
+};
 const stored = (k: string, d: boolean) => { try { const v = localStorage.getItem(k); return v == null ? d : v === '1'; } catch { return d; } };
-const store1 = (k: string, v: boolean) => { try { localStorage.setItem(k, v ? '1' : '0'); } catch { /* private mode */ } };
 const COL_MIN = 320;
-const STAGE_MIN = 740; // rail, gaps and the room the cards and file list need beside the chat
+const STAGE_MIN = 560; // the side list (228) and the room an open tool or the big map needs beside the chat (about 330)
 const colMax = () => Math.max(COL_MIN, Math.min(900, Math.round(window.innerWidth * 0.6), window.innerWidth - STAGE_MIN));
-const storedCol = () => { try { const v = Number(localStorage.getItem('aos-col')); return v >= COL_MIN ? v : null; } catch { return null; } };
+const ASIDE_MIN = 260;
+const asideMax = () => Math.max(ASIDE_MIN, Math.min(760, window.innerWidth - 228 - 420)); // the chat keeps at least 420 px
+const storedNum = (k: string, min: number) => { try { const v = Number(localStorage.getItem(k)); return v >= min ? v : null; } catch { return null; } };
+const store1 = (k: string, v: boolean) => { try { localStorage.setItem(k, v ? '1' : '0'); } catch { /* private mode */ } };
 
 export default function App() {
   const [basics, setBasics] = useState<Basics | null>(null);
@@ -60,10 +63,9 @@ export default function App() {
   const [brain, setBrain] = useState<BrainStatus | null>(null);
   const loadBrain = useCallback(() => window.aos.brain.status().then(setBrain).catch(() => {}), []);
   const [tree, setTree] = useState<TreeNode[]>([]);
-  const [graph, setGraph] = useState<GraphData>({ nodes: [], links: [] });
   const [vaultRoot, setVaultRoot] = useState('');
   const [notes, setNotes] = useState(0);
-  const [usage, setUsage] = useState<UsageV2 | null>(null);
+  const [recent, setRecent] = useState<{ path: string; title: string; project: string; modified: number }[]>([]); // newest deliverables, any project
   const chatId = useRef('');
   if (!chatId.current) chatId.current = newId();
   const [currentChat, setCurrentChat] = useState(chatId.current);
@@ -77,7 +79,6 @@ export default function App() {
   const pending = pendingIn(items);
   const setItems = useCallback((f: (xs: ChatItem[]) => ChatItem[]) => upd(chatId.current, (s) => ({ items: f(s.items) })), [upd]);
   const [openFile, setOpenFile] = useState<string | null>(null);
-  const [viewerStamp, setViewerStamp] = useState(0);
   // Files opened one from another (note links) leave a trail so Back steps to the previous file; with no
   // trail left, Back closes the viewer. Everything goes through openRef so listeners set up once stay current.
   const [trail, setTrail] = useState<string[]>([]);
@@ -97,117 +98,134 @@ export default function App() {
   };
   // The tool on the stage, if any. A file opened from a tool sits on top of it, and closing that file goes back to the tool.
   const [tool, setTool] = useState<Tool | null>(null);
-  const [settingsPage, setSettingsPage] = useState<'look' | 'brain' | 'phone' | undefined>(undefined);
-  const openTool = (t: Tool, page?: 'look' | 'brain' | 'phone') => { open(null); setSettingsPage(page); setTool(t); };
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | undefined>(undefined);
+  // Skills, Value and Health are pages of Settings now; asking for one opens Settings on that page.
+  const openTool = (t: Tool, page?: SettingsPage) => {
+    open(null);
+    if (t === 'skills' || t === 'value' || t === 'health') { setSettingsPage(t); setTool('settings'); return; }
+    setSettingsPage(page); setTool(t);
+  };
   const openToolRef = useRef(openTool); openToolRef.current = openTool; // for key handlers set up once
   const goHome = () => { open(null); setTool(null); };
   const [tab, setTab] = useState<Tab>('chat'); // small screens: which section is showing
-  const [filesOn, setFilesOn] = useState(() => stored('aos-files', true));
-  const [colW, setColW] = useState<number | null>(storedCol); // chat column width in px; null = the default
-  const dragCol = (e: React.PointerEvent<HTMLDivElement>) => {
-    const left = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect().left;
+  // The chat can be tucked away to a thin strip on the left, giving the right-hand panel the whole width.
+  const [chatMin, setChatMinState] = useState(() => stored('aos-chat-min', false));
+  const setChatMin = (v: boolean) => { setChatMinState(v); store1('aos-chat-min', v); };
+  // The side list can fold to its icons, for more room.
+  const [railSlim, setRailSlimState] = useState(() => stored('aos-rail-slim', false));
+  const setRailSlim = (v: boolean) => { setRailSlimState(v); store1('aos-rail-slim', v); };
+  // The line between the chat and the right-hand panel can be dragged. At home it sets the right column's width; with a
+  // tool, a file or the big map open it sets the chat's width (the panel takes the rest). Double-click resets.
+  const [colW, setColW] = useState<number | null>(() => storedNum('aos-col', COL_MIN)); // chat width with a panel open
+  const [asideW, setAsideW] = useState<number | null>(() => storedNum('aos-aside', ASIDE_MIN)); // right column width at home
+  const wideRef = useRef(false);
+  const dragSplit = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     el.setPointerCapture(e.pointerId);
+    const wide = wideRef.current;
+    const colLeft = (document.querySelector('.os > .col') as HTMLElement | null)?.getBoundingClientRect().left ?? 0;
+    document.body.classList.add('dragging-split');
     let w = 0;
-    const move = (m: PointerEvent) => { w = Math.round(Math.max(COL_MIN, Math.min(colMax(), m.clientX - left))); setColW(w); };
+    const move = (m: PointerEvent) => {
+      if (wide) { w = Math.round(Math.max(COL_MIN, Math.min(colMax(), m.clientX - colLeft))); setColW(w); }
+      else { w = Math.round(Math.max(ASIDE_MIN, Math.min(asideMax(), window.innerWidth - m.clientX))); setAsideW(w); }
+    };
     const up = () => {
       el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
-      if (w) try { localStorage.setItem('aos-col', String(w)); } catch { /* private mode */ }
+      document.body.classList.remove('dragging-split');
+      if (w) try { localStorage.setItem(wide ? 'aos-col' : 'aos-aside', String(w)); } catch { /* private mode */ }
     };
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   };
-  const resetCol = () => { setColW(null); try { localStorage.removeItem('aos-col'); } catch { /* private mode */ } };
+  const resetSplit = () => {
+    const k = wideRef.current ? 'aos-col' : 'aos-aside';
+    if (wideRef.current) setColW(null); else setAsideW(null);
+    try { localStorage.removeItem(k); } catch { /* private mode */ }
+  };
+  // Arrow keys move the line too, so it can be resized without a mouse.
+  const keySplit = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const step = (e.shiftKey ? 80 : 24) * (e.key === 'ArrowLeft' ? -1 : 1);
+    // Start from the width already set (not the one on screen), so quick repeated presses add up before a redraw.
+    const save = (k: string, w: number) => { try { localStorage.setItem(k, String(w)); } catch { /* private mode */ } return w; };
+    if (wideRef.current) {
+      const shown = (document.querySelector('.os > .col') as HTMLElement | null)?.getBoundingClientRect().width ?? COL_MIN;
+      setColW((w) => save('aos-col', Math.round(Math.max(COL_MIN, Math.min(colMax(), (w ?? shown) + step)))));
+    } else {
+      const shown = (document.querySelector('.os > .stage') as HTMLElement | null)?.getBoundingClientRect().width ?? ASIDE_MIN;
+      setAsideW((w) => save('aos-aside', Math.round(Math.max(ASIDE_MIN, Math.min(asideMax(), (w ?? shown) - step)))));
+    }
+  };
   const [palette, setPalette] = useState(false);
-  // The graph is rebuilt from scratch (new key) if the graphics card drops it, or from Ctrl+K "Reload the graph".
-  const [graphKey, setGraphKey] = useState(0);
-  const [graphNote, setGraphNote] = useState('');
-  const graphLost = useCallback(() => {
-    setGraphNote('The graph lost its drawing surface. Restarting it…');
-    setTimeout(() => { setGraphKey((k) => k + 1); setGraphNote(''); }, 1500);
-  }, []);
-  // Words the assistant says after using a tool start a new paragraph, instead of running on from the line before.
+  // The home ring is rebuilt from scratch (new key) from Ctrl+K "Reload the ring".
+  const [ringKey, setRingKey] = useState(0);
+  // Words Agentic OS says after using a tool start a new paragraph, instead of running on from the line before.
   const gap = useRef<Record<string, boolean>>({});
   const [lastText, setLastText] = useState(0);
-  // Theme and map shape: switched from the top bar and the map header, remembered on this PC.
-  const [theme, setThemeState] = useState<Theme>(getTheme);
-  const switchTheme = (t: Theme) => { setTheme(t); setThemeState(t); };
-  const [shape, setShape] = useState<GraphShape>(getGraphShape);
-  useEffect(() => { const f = () => setShape(getGraphShape()); window.addEventListener('aos-graph-shape', f); return () => window.removeEventListener('aos-graph-shape', f); }, []);
-  // Counts beside Projects and Skills in the nav, read again whenever the workspace changes.
-  const [projectCount, setProjectCount] = useState(0);
-  const [skillCount, setSkillCount] = useState(0);
-  const loadCounts = useCallback(() => {
-    window.aos.notes.projects().then((ps) => setProjectCount(ps.filter((p) => p !== 'Inbox').length)).catch(() => {});
-    window.aos.vault.skills().then((s) => setSkillCount(s.groups.reduce((a, g) => a + g.skills.length, 0))).catch(() => {});
-  }, []);
   // Dreams: open cards from the latest dream (dock badge, title-bar moon, home card) and when it ran.
   const [dream, setDream] = useState<{ unread: number; at: number | null; headline: string }>({ unread: 0, at: null, headline: '' });
   const loadDreams = useCallback(() => window.aos.dreams.state().then((s) => {
     const openCards = s.latest ? s.latest.cards.filter((c) => c.status === 'open') : [];
     setDream({ unread: openCards.length, at: s.latest ? s.latest.at : null, headline: openCards[0]?.headline || '' });
   }).catch(() => {}), []);
-  // Open action items across every project (the dock badge on Actions). Re-read whenever the workspace changes.
+  // Open action items across every project (the dock badge on Actions). Re-read whenever the notes folder changes.
   const [openActs, setOpenActs] = useState(0);
-  const loadActs = useCallback(() => window.aos.actions.list().then((r) => setOpenActs(r.open)).catch(() => {}), []);
-  const [speaking, setSpeaking] = useState(false);
-  const [voiceOk, setVoiceOk] = useState(false);
-  const [sttOk, setSttOk] = useState(false);
-  const [phase, setPhase] = useState<Phase>('off');
+  // Mail waiting on a reply (the dock badge on Mail). Re-read whenever the background check or a manual pull finishes.
+  const [mailOpen, setMailOpen] = useState(0);
+  useEffect(() => {
+    const load = () => window.aos.mail.state().then((m) => setMailOpen(m.open.length)).catch(() => {});
+    load();
+    const off = window.aos.mail.onEvent((e) => { if (e.type === 'done' || e.type === 'error' || e.type === 'changed') load(); });
+    const t = setInterval(load, 5 * 60 * 1000);
+    return () => { off(); clearInterval(t); };
+  }, []);
+  const [actsList, setActsList] = useState<ActionItem[]>([]); // the first few open ones, for the side column
+  const loadActs = useCallback(() => window.aos.actions.list().then((r) => { setOpenActs(r.open); setActsList(r.items.filter((x) => !x.done).slice(0, 3)); }).catch(() => {}), []);
+  // Home is the chat with the notes map beside it. The map can be minimised for a chat-only view (stageMin); a tool or a file still opens beside the chat.
+  const mapBig = true;
+  const [stageMin, setStageMinState] = useState(() => stored('aos-stage-min', false));
+  const setStageMin = (v: boolean) => { setStageMinState(v); store1('aos-stage-min', v); };
   const pendingRef = useRef<number | null>(null); // approval the chat on screen is waiting on
-  // The card shows the answer itself when the 'approved' event comes back (approval ids are unique across chats).
-  const approve = (id: number, yes: boolean) => window.aos.brain.approve(id, yes);
-  // He wants to know more before saying yes or no. Nothing runs; the assistant explains, then asks again.
+  const [allowEdits, setAllowEdits] = useState(false);
+  const approve = (id: number, yes: boolean, all = false) => {
+    if (yes && all) setAllowEdits(true);
+    // approval ids are unique across chats, so find the card wherever it is
+    setStore((st) => Object.fromEntries(Object.entries(st).map(([k, s]) => [k, s.items.some((x) => x.approval?.id === id)
+      ? { ...s, items: s.items.map((x) => (x.approval?.id === id ? { ...x, approval: { ...x.approval, all: yes && all } } : x)) } : s])));
+    return window.aos.brain.approve(id, yes, all);
+  };
+  const stopAllowEdits = () => { setAllowEdits(false); window.aos.brain.allowEdits(false); };
+  // It wants to know more before saying yes or no. Nothing runs; Agentic OS explains, then asks again.
   const askAbout = (id: number, question: string) => {
     setItems((xs) => [...xs, { role: 'you', text: question }, { role: 'assistant', text: '', tools: [] }]);
-    return window.aos.brain.approve(id, false, question);
+    return window.aos.brain.approve(id, false, false, question);
   };
-  // Voice answers: wait until the assistant has finished asking out loud before opening the mic.
-  const askPending = useRef(false);
-  const askTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [wakeOn, setWakeOn] = useState(() => !onPhone && stored('aos-wake', true));
-  const listener = useRef<Listener | null>(null);
-  const [muted, setMuted] = useState(() => stored('aos-muted', false));
-
-  // the assistant's voice: clips arrive per sentence and play back to back (audio.ts).
-  const voice = useMemo(() => new Voice(), []);
-  useEffect(() => { voice.onSpeaking = setSpeaking; }, [voice]);
-  const hush = () => voice.hush();
-  const toggleMute = () => {
-    const m = !muted;
-    setMuted(m);
-    store1('aos-muted', m);
-    window.aos.voice.mute(m);
-    if (m) hush();
-  };
+  // Agentic OS is text only at launch: no microphone, wake word or spoken answers (taken out 8 Oct 2026).
   const [now, setNow] = useState(Date.now());
-  const [win, setWin] = useState({ full: onPhone, max: false });
-  const [linked, setLinked] = useState(true); // phone: is the PC reachable
+  const [win, setWin] = useState({ full: false, max: false });
+  const [linked, setLinked] = useState(true);
 
-  // The 3D graph is only handed new data when the set of notes or links changed. An edit inside a note (most
-  // vault changes, and every edit the assistant makes) leaves it alone.
-  const graphSig = useRef('');
   const loadVault = useCallback(async () => {
-    const [t, g] = await Promise.all([window.aos.vault.tree(), window.aos.vault.graph()]);
+    const [t, count] = await Promise.all([window.aos.vault.tree(), window.aos.vault.noteCount()]);
     setTree(t.children);
     setVaultRoot(t.root);
-    const sig = JSON.stringify([g.nodes.map((n) => [n.id, !!n.received]), g.links.map((l) => [l.source, l.target])]);
-    if (sig !== graphSig.current) { graphSig.current = sig; setGraph(g); }
-    setNotes(g.nodes.length); // one node per note
+    setNotes(count); // one per note (the link graph is not needed for this, and is the dearest thing to build)
+    // The newest few deliverables across every project, for the side column (instead of a file tree).
+    window.aos.vault.projects().then((ps: ProjectInfo[]) => setRecent(ps
+      .flatMap((p) => (p.deliverables || []).map((d) => ({ path: d.path, title: d.title || d.name.replace(/\.[a-z0-9]+$/i, '').replace(/^\d+[-_ ]*/, '').replace(/[-_]+/g, ' '), project: p.title, modified: d.modified })))
+      .sort((a, b) => b.modified - a.modified).slice(0, 4))).catch(() => {});
   }, []);
 
   useEffect(() => {
-    window.aos.setup.get().then((b) => { setBasics(b); setSetup(!b.onboarded && !onPhone); });
+    window.aos.setup.get().then((b) => { setBasics(b); setSetup(!b.onboarded); });
     loadVault();
     loadBrain();
-    window.aos.usage.get().then(setUsage);
-    window.aos.voice.status().then((v) => setVoiceOk(v.available));
-    window.aos.voice.mute(muted);
+    window.aos.voice.mute(true); // text only: the app never makes spoken answers, even if voice tools are on the PC
     loadActs();
-    loadCounts();
     const off = window.aos.vault.onChanged((info) => {
       loadVault();
       loadActs();
-      loadCounts();
       if (info.outside.length) {
         // One short line (file names only); a back-to-back note replaces the last one instead of stacking.
         const names = info.outside.slice(0, 2).map((p: string) => p.split(/[\\/]/).pop()).join(', ');
@@ -219,16 +237,16 @@ export default function App() {
         });
       }
     });
-    // The nightly review runs on its own; it only ever shows as one quiet line, never a reply or a pause.
+    // Dreams run on their own; they only ever show as one quiet cyan line, never a reply or a pause.
     loadDreams();
     const offDreams = window.aos.dreams.onEvent((e: DreamEvent) => {
       loadDreams();
-      const text = e.phase === 'start' ? 'Nightly review: reading this week\'s chats...'
-        : e.phase === 'done' ? (e.count ? `Nightly review: ${e.count} new suggestion${e.count === 1 ? ' is' : 's are'} ready. Open Nightly review from the nav.` : 'Nightly review: nothing worth your time tonight.')
-        : e.phase === 'error' ? `The nightly review couldn't run: ${e.message}` : null;
+      const text = e.phase === 'start' ? "🌙 Dreams: reading this week's chats..."
+        : e.phase === 'done' ? (e.count ? `🌙 Dreams: ${e.count} new recommendation${e.count === 1 ? ' is' : 's are'} ready. Open Dreams from the dock or the moon.` : '🌙 Dreams: nothing worth your time tonight.')
+        : e.phase === 'error' ? `🌙 Dreams couldn't run: ${e.message}` : null;
       if (text) setItems((xs) => {
         const last = xs[xs.length - 1];
-        const swap = last && last.role === 'system' && /^(Nightly review|The nightly review)/.test(last.text);
+        const swap = last && last.role === 'system' && last.text.startsWith('🌙');
         return [...(swap ? xs.slice(0, -1) : xs), { role: 'system', text }];
       });
     });
@@ -239,8 +257,9 @@ export default function App() {
     const link = (e: Event) => setLinked(!!(e as CustomEvent).detail);
     window.addEventListener('aos-link', link);
     return () => { off(); offWin(); offDreams(); clearInterval(tick); window.removeEventListener('aos-link', link); };
-  }, [loadVault, loadDreams, loadBrain, loadActs, loadCounts]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { document.body.classList.toggle('windowed', !win.full && !onPhone); document.body.classList.toggle('fullscreen', win.full && !onPhone); document.body.classList.toggle('phone', onPhone); }, [win.full]);
+  }, [loadVault, loadDreams, loadBrain, loadActs]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { document.body.classList.toggle('windowed', !win.full); document.body.classList.toggle('fullscreen', win.full); }, [win.full]);
+  useEffect(() => { document.body.classList.toggle('mac', os === 'mac'); }, []);
 
   // Brain events drive the chat, the read trail, and the assistant's state.
   const busyRef = useRef(false); // the chat on screen is working
@@ -255,15 +274,15 @@ export default function App() {
     return [...c, f({ role: 'assistant', text: '', tools: [] })];
   };
   useEffect(() => window.aos.brain.onEvent((e: BrainEvent) => {
-    if (e.type === 'brainChanged') { loadBrain(); window.aos.usage.get().then(setUsage); return; }
+    if (e.type === 'brainChanged') { loadBrain(); return; }
     const cid = e.chat || chatId.current;
-    if (e.type === 'limits' && !e.chat) { window.aos.usage.get().then(setUsage); return; } // the launch check
+    if (e.type === 'limits' && !e.chat) return; // the launch check (usage meters are out until Bedrock costs are understood)
     if (!(cid in storeRef.current)) return; // a chat this screen doesn't have open (another screen's, or forgotten)
     const here = cid === chatId.current; // events from other chats land in their own chat, quietly
     const setIt = (f: (xs: ChatItem[]) => ChatItem[]) => upd(cid, (s) => ({ items: f(s.items) }));
     if (e.type === 'start') {
-      if (here) { hush(); busyRef.current = true; }
-      upd(cid, (s) => ({ busy: true, items: [...s.items, { role: 'assistant', text: '', tools: [] }] }));
+      if (here) busyRef.current = true;
+      upd(cid, (s) => ({ busy: true, items: [...s.items, { role: 'assistant', text: '', tools: [], t0: Date.now() }] }));
     }
     if (e.type === 'text') {
       if (here) setLastText(Date.now());
@@ -274,49 +293,48 @@ export default function App() {
       gap.current[cid] = true;
       const label = e.path || String(e.input?.pattern ?? e.input?.command ?? e.input?.query ?? e.input?.url ?? '').slice(0, 60);
       // a helper's own steps light up the graph but stay off the chip list, which would drown in them
-      if (!e.helper) setIt((xs) => toReply(xs, (b) => ({ ...b, tools: [...(b.tools || []), { name: e.name, label, path: e.path }] })));
+      if (!e.helper) setIt((xs) => toReply(xs, (b) => ({ ...b, now: `${e.name} ${label}`.trim(), tools: [...(b.tools || []), { name: e.name, label, path: e.path }] })));
+      else if (e.parent) setIt((xs) => xs.map((x) => (x.helpers?.some((h) => h.id === e.parent) ? { ...x, helpers: (x.helpers || []).map((h) => (h.id === e.parent ? { ...h, last: `${e.name} ${label}`.trim() } : h)) } : x)));
       if (e.path) upd(cid, (s) => ({ read: [...s.read.filter((p) => p !== e.path), e.path!] }));
       if (e.path && ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(e.name)) upd(cid, (s) => ({ wrote: s.wrote.includes(e.path!) ? s.wrote : [...s.wrote, e.path!] }));
+    }
+    if (e.type === 'plan') setIt((xs) => toReply(xs, (b) => ({ ...b, plan: e.todos })));
+    if (e.type === 'toolActive') {
+      setIt((xs) => toReply(xs, (b) => (b.activeTools || []).some((x) => x.id === e.id) ? b
+        : { ...b, activeTools: [...(b.activeTools || []), { id: e.id, name: e.name, icon: e.icon, color: e.color }] }));
     }
     if (e.type === 'helper') {
       if (e.phase === 'start') setIt((xs) => toReply(xs, (b) => ({ ...b, helpers: [...(b.helpers || []), { id: e.id, name: e.name, desc: e.desc, state: 'running' as const }] })));
       else setIt((xs) => xs.map((x) => (x.helpers?.some((h) => h.id === e.id) ? { ...x, helpers: (x.helpers || []).map((h) => (h.id === e.id ? { ...h, state: e.ok ? 'done' as const : 'failed' as const } : h)) } : x)));
     }
-    if (e.type === 'audio' && here && !mutedRef.current) voice.add(e.seq, e.data);
     if (e.type === 'approval') {
-      upd(cid, (s) => ({ unread: s.unread || !here, items: [...s.items, { role: 'approval', text: e.summary, approval: { id: e.id, risky: e.risky, what: e.what || undefined, helper: e.helper } }] }));
-      if (here) {
-        pendingRef.current = e.id;
-        if (!byVoice.current) {
-          // typed question: answer on the card, no mic
-        } else if (voiceOkRef.current && !mutedRef.current) {
-          askPending.current = true; // the speech-ended effect opens the mic
-          if (askTimer.current) clearTimeout(askTimer.current);
-          askTimer.current = setTimeout(() => { if (askPending.current) { askPending.current = false; listener.current?.listenNow(); } }, 9000); // if their voice never plays
-        } else {
-          listener.current?.listenNow();
-        }
-      }
+      upd(cid, (s) => ({ unread: s.unread || !here, items: [...s.items, { role: 'approval', text: e.summary, approval: { id: e.id, risky: e.risky, canAll: e.canAll, what: e.what || undefined, helper: e.helper } }] }));
+      if (here) pendingRef.current = e.id; // answered on the card
     }
+    if (e.type === 'autoApproved') setIt((xs) => [...xs, { role: 'system', text: `Auto-approved: ${e.summary}` }]);
     if (e.type === 'approved') {
       if (here && pendingRef.current === e.id) pendingRef.current = null;
       setIt((xs) => xs.map((x) => (x.approval?.id === e.id ? { ...x, approval: { ...x.approval, answer: e.yes, asked: e.question || undefined } } : x)));
     }
-    if (e.type === 'open' && here) { open(e.path); setViewerStamp((n) => n + 1); } // the assistant's open_file tool; the stamp makes the viewer re-read a file that is already showing
+    if (e.type === 'open' && here) open(e.path); // The assistant's open_file tool
     if (e.type === 'session') upd(cid, () => ({ sessionId: e.id }));
-    if (e.type === 'error' || e.type === 'note') setIt((xs) => { const last = xs[xs.length - 1]; const swap = false; return [...(swap ? xs.slice(0, -1) : xs), { role: 'system', text: e.message }]; });
-    if (e.type === 'result' || e.type === 'limits') window.aos.usage.get().then(setUsage);
-    if (e.type === 'done') { if (here) busyRef.current = false; upd(cid, (s) => ({ busy: false, unread: s.unread || !here })); }
+    if (e.type === 'error' || e.type === 'note') setIt((xs) => { const last = xs[xs.length - 1]; const swap = e.message.startsWith('Lessons pass') && last && last.role === 'system' && last.text.startsWith('Lessons pass'); return [...(swap ? xs.slice(0, -1) : xs), { role: 'system', text: e.message }]; });
+    if (e.type === 'done') { if (here) busyRef.current = false; upd(cid, (s) => ({ busy: false, unread: s.unread || !here, items: s.items.map((x, i) => (i === s.items.length - 1 && x.role === 'assistant' && x.t0 && !x.t1 ? { ...x, t1: Date.now() } : x)) })); }
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Typed questions get typed follow-ups: the mic only reopens after a spoken one.
-  const byVoice = useRef(false);
-  const send = (text: string, spoken = false, files: Attached[] = []) => {
-    byVoice.current = spoken;
+  const send = (text: string, _spoken = false, files: Attached[] = []) => {
     setTab('chat');
+    setChatMin(false);
     setItems((xs) => [...xs, { role: 'you', text, files: files.map(({ name, preview }) => ({ name, preview })) }]);
-    window.aos.brain.send(text || 'Have a look at what I attached.', spoken, files.map((f) => f.path), chatId.current);
+    // the picker's choice is set on the engine right before the question, so it holds after a restart or a reopened chat too
+    const p = storeRef.current[chatId.current]?.pick || { model: null, effort: null };
+    syncPick(chatId.current, p).finally(() => window.aos.brain.send(text || 'Have a look at what I attached.', false, files.map((f) => f.path), chatId.current));
   };
+  // Tells the engine what the picker is set to, and shows what it actually took (a name it cannot use falls back to Auto, and the button says so).
+  const syncPick = (cid: string, p: { model: string | null; effort: string | null }) =>
+    window.aos.brain.setPick(cid, p.model, p.effort)
+      .then((r) => { if (r && (r.model !== p.model || r.effort !== p.effort)) upd(cid, () => ({ pick: { model: r.model, effort: r.effort } })); })
+      .catch(() => {});
   const sendRef = useRef(send);
   sendRef.current = send;
 
@@ -326,7 +344,7 @@ export default function App() {
   const busySaved = useRef(new Map<string, number>()); // when each replying chat was last checkpointed
   const saveChat = (id: string, s: ChatState) => {
     if (!hasYou(s)) return; // nothing said yet (just system notes): not worth keeping
-    window.aos.chats.save({ id, title: chatTitle(s.items), sessionId: s.sessionId, items: s.items, read: s.read, wrote: s.wrote, busy: s.busy });
+    window.aos.chats.save({ id, title: chatTitle(s.items), sessionId: s.sessionId, items: s.items, read: s.read, wrote: s.wrote, busy: s.busy, pick: s.pick });
     savedRef.current.set(id, s.items);
     savedBusy.current.set(id, s.busy);
   };
@@ -350,13 +368,12 @@ export default function App() {
 
   // On launch, chats a crash or a closed app cut off mid-reply are pointed out once, so nothing is lost quietly.
   useEffect(() => {
-    if (onPhone) return; // the PC may simply still be working on them
     window.aos.chats.list().then((xs) => {
       const cut = xs.filter((x) => x.interrupted);
       if (!cut.length) return;
       const names = cut.slice(0, 3).map((x) => '"' + x.title.slice(0, 50) + '"').join(', ');
       const who = cut.length === 1 ? 'a chat was' : `${cut.length} chats were`;
-      setItems((ys) => [...ys, { role: 'system', text: `The app closed while ${who} mid-reply: ${names}${cut.length > 3 ? ' and more' : ''}. Open ${cut.length === 1 ? 'it' : 'them'} from Chats and say "carry on".` }]);
+      setItems((ys) => [...ys, { role: 'system', text: `Agentic OS closed while ${who} mid-reply: ${names}${cut.length > 3 ? ' and more' : ''}. Open ${cut.length === 1 ? 'it' : 'them'} from Chats and say "carry on".` }]);
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -364,10 +381,7 @@ export default function App() {
   // Empty chats that were never used are dropped on the way.
   const keepers = (st: Record<string, ChatState>, keep: string) => Object.fromEntries(Object.entries(st).filter(([id, s]) => id === keep || s.busy || hasYou(s)));
   const show = (id: string) => {
-    hush();
-    askPending.current = false;
-    byVoice.current = false;
-    open(null); setLastText(0); setTab('chat');
+    open(null); setLastText(0); setTab('chat'); setChatMin(false);
     chatId.current = id;
     setCurrentChat(id);
     setStore((st) => keepers({ ...st, [id]: { ...(st[id] ?? blank()), unread: false } }, id));
@@ -380,7 +394,7 @@ export default function App() {
     show(id);
   };
   // Flip to another chat. One that is still in memory (maybe working) is shown live; an old one is read back from
-  // disk and the assistant carries on that chat's session, history and all.
+  // disk and Agentic OS carries on that chat's session, history and all.
   const openChat = async (id: string) => {
     if (id === chatId.current) { setTab('chat'); return; }
     if (!storeRef.current[id]) {
@@ -393,9 +407,9 @@ export default function App() {
         ...(x.helpers ? { helpers: x.helpers.map((h) => (h.state === 'running' ? { ...h, state: 'failed' as const } : h)) } : {}),
       }));
       // A chat that was cut off mid-reply (the app closed or crashed) says so, and is saved again at once without the busy mark.
-      if (c.busy && !onPhone) xs.push({ role: 'system', text: 'This chat was cut off mid-reply when the app closed. Say "carry on" and the assistant will pick up from here.' });
+      if (c.busy) xs.push({ role: 'system', text: 'This chat was cut off mid-reply when Agentic OS closed. Say "carry on" and it will pick up from here.' });
       else { savedRef.current.set(id, xs); savedBusy.current.set(id, false); }
-      setStore((st) => ({ ...st, [id]: { ...blank(), items: xs, read: c.read || [], wrote: c.wrote || [], sessionId: c.sessionId } }));
+      setStore((st) => ({ ...st, [id]: { ...blank(), items: xs, read: c.read || [], wrote: c.wrote || [], sessionId: c.sessionId, pick: c.pick || { model: null, effort: null } } }));
       await window.aos.brain.openChat(id, c.sessionId);
     }
     show(id);
@@ -409,127 +423,58 @@ export default function App() {
   for (const [id, s] of Object.entries(store)) live[id] = { busy: s.busy, needs: pendingIn(s.items) != null, unread: s.unread };
   const unsaved: ChatSummary[] = Object.entries(store).filter(([, s]) => hasYou(s)).map(([id, s]) => ({ id, title: chatTitle(s.items), updated: Date.now(), count: s.items.length }));
 
-  // Microphone: "Hey the assistant" and push-to-talk (hold Space outside the text box, or hold the mic button).
+  // Keyboard: Ctrl+Shift+A / N open Actions and Notes, Ctrl+K the search. (No microphone or Space-to-talk at launch.)
   useEffect(() => {
-    const l = new Listener();
-    l.onPhase = setPhase;
-    l.onText = (t) => {
-      // While the assistant is waiting on a yes/no, a spoken answer goes to them, not as a new question.
-      if (pendingRef.current != null) {
-        const s = t.toLowerCase();
-        const id = pendingRef.current;
-        if (/\b(no|nope|nah|don'?t|stop|cancel|leave it|never mind|hold off)\b/.test(s)) approve(id, false);
-        else if (/\b(yes|yeah|yep|yup|sure|go ahead|go for it|do it|okay|ok|please|fine|alright|right)\b/.test(s)) approve(id, true);
-        else askAbout(id, t); // not a yes or no: treat it as a question about the action
-        return;
-      }
-      if (!busyRef.current) sendRef.current(t, true);
-    };
-    l.onError = (m) => setItems((xs) => [...xs, { role: 'system', text: m }]);
-    listener.current = l;
-    window.aos.stt.status().then((s) => setSttOk(s.available));
-    const typing = (e: KeyboardEvent) => { const t = e.target as HTMLElement; return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable); };
     const down = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'p')) { e.preventDefault(); setPalette((p) => !p); return; }
-      // Ctrl+Shift+A: Action items. Ctrl+Shift+N: Notes.
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && /^[an]$/i.test(e.key)) { e.preventDefault(); openToolRef.current(e.key.toLowerCase() === 'a' ? 'actions' : 'notes'); return; }
-      if (e.code === 'Space' && !e.repeat && !typing(e) && !(e.target as HTMLElement)?.closest?.('button')) { e.preventDefault(); l.pushToTalk(true); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'p')) { e.preventDefault(); setPalette((p) => !p); return; }
     };
-    const up = (e: KeyboardEvent) => { if (e.code === 'Space' && !typing(e)) { l.pushToTalk(false); } };
     window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => window.removeEventListener('keydown', down);
+  }, []);
 
-  // "Hey the assistant" starts listening once setup is finished (never during the welcome steps, or in a test capture).
-  const wakeStarted = useRef(false);
-  useEffect(() => {
-    if (wakeStarted.current || !sttOk || !wakeOn || setup || !basics?.onboarded || quiet) return;
-    wakeStarted.current = true;
-    listener.current?.setWake(true);
-  }, [sttOk, wakeOn, setup, basics]);
-
-  // He can't wake themselves: ignore the wake word while they're working or talking.
-  useEffect(() => { if (listener.current) listener.current.paused = (busy && pending == null) || speaking; }, [busy, speaking, pending]);
-
-  // Conversation: when the assistant finishes a spoken answer, the mic reopens briefly for a reply.
-  const wasSpeaking = useRef(false);
-  useEffect(() => {
-    const ended = wasSpeaking.current && !speaking;
-    wasSpeaking.current = speaking;
-    // He just finished asking for approval: listen for the answer now (wake word on or off).
-    if (ended && pendingRef.current != null && askPending.current) {
-      askPending.current = false;
-      if (askTimer.current) clearTimeout(askTimer.current);
-      setTimeout(() => listener.current?.listenNow(), 200);
-      return;
-    }
-    if (ended && !busy && pending == null && wakeOn && !muted && phase === 'waiting' && byVoice.current) {
-      setTimeout(() => { if (!busyRef.current && pendingRef.current == null) listener.current?.listenNow(true); }, 250);
-    }
-  }, [speaking, busy]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggleWake = () => {
-    const on = !wakeOn;
-    setWakeOn(on);
-    store1('aos-wake', on);
-    listener.current?.setWake(on);
-  };
-
-  // the assistant's state comes from what is happening, never from buttons.
-  // "Talking" means audio is playing; text streaming in without audio is "replying".
-  // refs so listener callbacks (set up once) see current values
-  const itemsRef = useRef(items); itemsRef.current = items;
+  // The assistant's state comes from what is happening, never from buttons: text streaming in is "replying".
   busyRef.current = busy;
   pendingRef.current = pending;
-  const voiceOkRef = useRef(voiceOk); voiceOkRef.current = voiceOk;
-  const mutedRef = useRef(muted); mutedRef.current = muted;
 
-  const assistant: AssistantState = phase === 'recording' ? 'listening' : speaking ? 'talking' : (muted || !voiceOk || !byVoice.current ? now - lastText < 1500 : false) ? 'replying' : busy ? 'thinking' : 'idle';
+  const orbState: OrbState = now - lastText < 1500 ? 'replying' : busy ? 'thinking' : 'idle';
   const reading = busy ? read[read.length - 1] ?? null : null;
-  const stateText = assistant === 'listening' ? 'Listening' : assistant === 'thinking' ? 'Thinking it over' : assistant === 'talking' ? 'Talking' : assistant === 'replying' ? 'Replying' : 'Ready';
-  const sub = phase === 'transcribing' ? 'catching that…' : assistant === 'listening' ? (listener.current?.inFollowUp ? 'anything else?' : "go on, I'm listening") : assistant === 'thinking' ? `${read.length} file${read.length === 1 ? '' : 's'} read` : assistant === 'talking' ? 'answering you' : phase === 'waiting' ? "say 'hey computer', hold Space, or type" : phase === 'loading' ? 'warming up the ears…' : !sttOk ? 'type to talk to me' : onPhone ? 'hold the mic to talk, or type' : 'hold Space to talk, or type';
-  // Live loudness for the stage: their voice while they talks, the microphone while they listens.
-  const level = useCallback(() => (listener.current?.phase === 'recording' ? { level: listener.current.level, bins: null } : { level: voice.level(), bins: voice.spectrum() }), [voice]);
+  const stateText = orbState === 'thinking' ? 'Thinking it over' : orbState === 'replying' ? 'Replying' : 'Ready';
+  const sub = orbState === 'thinking' ? `${read.length} file${read.length === 1 ? '' : 's'} read` : '';
 
   const provider = brain?.provider;
-  const provColor = ({ claude: '#d97757', openai: '#10a37f', gemini: '#4c8df6', antigravity: '#8b7cf6', local: '#a3a3a3', custom: '#c4b5fd' } as Record<string, string>)[provider?.id || 'claude'];
-  const setupNeeded = brain && !brain.onboarded ? (onPhone ? 'The app has not been set up yet. Finish the welcome steps on the PC first.' : 'Finish the welcome steps to choose a brain.') : brain && !brain.ready ? 'My brain is not ready. Open Settings, then Brain, and pick a model.' : undefined;
-  const badges = { dreams: dream.unread, actions: openActs };
-  const counts = { projects: projectCount, skills: skillCount };
-  const aiName = basics?.assistantName || 'Assistant';
-  // The legend under the map: notes per top folder, in LEGEND's order, then everything else as Other.
-  const legend = useMemo(() => {
-    const by: Record<string, number> = {};
-    for (const n of graph.nodes) by[n.group] = (by[n.group] || 0) + 1;
-    const known = LEGEND.filter((l) => by[l.group]).map((l) => ({ ...l, n: by[l.group] }));
-    const other = Object.entries(by).filter(([g]) => !LEGEND.some((l) => l.group === g)).reduce((a, [, n]) => a + n, 0);
-    return other ? [...known, { group: 'other', label: 'Other', n: other }] : known;
-  }, [graph]);
+  const setupNeeded = brain && !brain.onboarded ? 'Finish the welcome steps to connect me.' : brain && !brain.ready ? 'My brain is not ready. Open Settings, then Brain, and check the connection.' : undefined;
+  const badges = { dreams: dream.unread, actions: openActs, mail: mailOpen };
   const pickTool = (t: Tool) => openTool(t);
   const actions: Action[] = [
     { id: 'new', label: 'New chat', icon: 'plus', run: newChat },
-    { id: 'home', label: 'Home: show the node map', icon: 'home', run: () => { goHome(); setTab('graph'); } },
-    { id: 'graph', label: 'Redraw the node map', icon: 'home', run: () => { goHome(); setGraphKey((k) => k + 1); } },
-    { id: 'theme', label: `Switch to ${getTheme() === 'dark' ? 'light' : 'dark'} mode`, icon: 'sun', run: () => switchTheme(getTheme() === 'dark' ? 'light' : 'dark') },
-    { id: 'files', label: filesOn ? 'Hide the file tree' : 'Show the file tree', icon: 'files', run: () => { setFilesOn(!filesOn); store1('aos-files', !filesOn); } },
-    ...(voiceOk ? [{ id: 'mute', label: muted ? 'Unmute spoken answers' : 'Mute spoken answers', icon: muted ? 'sound' : 'mute', run: toggleMute }] : []),
-    ...(sttOk && !onPhone ? [{ id: 'wake', label: wakeOn ? 'Turn off "Hey computer"' : 'Turn on "Hey computer"', icon: 'ear', run: toggleWake }] : []),
-    ...(!onPhone ? [{ id: 'brain', label: 'Change the brain (AI and sign-in)', icon: 'brain', run: () => openTool('settings', 'brain') }, { id: 'phone', label: 'Pair a phone', icon: 'phone', run: () => openTool('settings', 'phone') }] : []),
-    ...(busy ? [{ id: 'stop', label: 'Stop the assistant', icon: 'power', run: () => { window.aos.brain.stop(chatId.current); } }] : []),
+    { id: 'home', label: stageMin ? 'Show the notes map' : 'Hide the notes map (chat only)', icon: 'home', run: () => { goHome(); setStageMin(!stageMin); setTab('graph'); } },
+    { id: 'graph', label: 'Reload the ring', icon: 'home', run: () => { goHome(); setStageMin(false); setRingKey((k) => k + 1); } },
+    { id: 'theme', label: `Switch to ${getTheme() === 'dark' ? 'light' : 'dark'} mode`, icon: 'sun', run: () => setTheme(getTheme() === 'dark' ? 'light' : 'dark') },
+    { id: 'chatmin', label: chatMin ? 'Show the chat' : 'Hide the chat', icon: 'chat', run: () => { if (!solo) setChatMin(!chatMin); } },
+    { id: 'brain', label: 'Change the brain (AI and sign-in)', icon: 'brain', run: () => openTool('settings', 'brain') },
+    ...(busy ? [{ id: 'stop', label: 'Stop Agentic OS', icon: 'power', run: () => { window.aos.brain.stop(chatId.current); } }] : []),
   ];
   const covered = !!(tool || openFile);
-  const showGraph = !onPhone || tab === 'graph';
+  const wide = covered;
+  const solo = !covered && stageMin; // chat only: nothing open beside it
+  const chatHidden = chatMin && !solo;
+  wideRef.current = wide;
   if (!basics) return <div className="os"><div className="backdrop"><i /></div></div>;
-  if (setup) return <Onboarding basics={basics} onDone={() => { setSetup(false); window.aos.setup.get().then(setBasics); loadBrain(); loadVault(); window.aos.usage.get().then(setUsage); }} />;
+  if (setup) return <Onboarding basics={basics} windowBtns={<WindowButtons max={win.max} />} onDone={() => { setSetup(false); window.aos.setup.get().then(setBasics); loadBrain(); loadVault(); }} />;
+
+  const sizes: Record<string, string> = {};
+  if (colW) sizes['--col'] = `clamp(${COL_MIN}px, ${colW}px, calc(100vw - ${STAGE_MIN}px))`;
+  if (asideW) sizes['--aside'] = `${asideW}px`;
+  const chatAttention = busy || pending != null;
 
   return (
-    <div className={`os ${filesOn ? 'files-on' : 'files-off'}${covered ? ' has-pane' : ''}`} data-tab={tab} style={colW ? { ['--col' as string]: `clamp(${COL_MIN}px, ${colW}px, calc(100vw - ${STAGE_MIN}px))` } : undefined}>
+    <div className={`os${covered ? ' has-pane' : ''}${mapBig && !covered ? ' map-big' : ''}${solo ? ' solo' : ''}${chatHidden ? ' chat-min' : ''}${railSlim ? ' rail-slim' : ''}`} data-tab={tab} style={sizes}>
+      <div className="backdrop"><i /></div>
+
       <header className="bar">
-        <div className="brand"><i className="logo" aria-hidden /><b>Agentic OS</b></div>
-        <span className="now-state"><i className="dot" />{stateText}</span>
-        <span className="flex" />
-        <button className="search-pill nodrag" onClick={() => setPalette(true)} aria-label="Search and commands" title="Search files, chats and tools (Ctrl+K)"><Icon name="search" size={15} /><span>Search or jump to…</span><kbd>Ctrl K</kbd></button>
+        <button className="search-pill nodrag" onClick={() => setPalette(true)} aria-label="Search and commands" title={`Search files, chats and tools (${os === 'mac' ? 'Cmd' : 'Ctrl'}+K)`}><Icon name="search" size={15} /><span>Search or jump to…</span><kbd>{os === 'mac' ? '⌘ K' : 'Ctrl K'}</kbd></button>
+        <span className={`now-state s-${orbState}`}><i aria-hidden />{stateText}</span>
         <span className="flex" />
         {others.length > 0 && (
           <button className={`pill other-chats ${needYou.length ? 'needs' : others.some(([, c]) => c.busy) ? 'busy' : ''}`} onClick={() => openChat((needYou[0] || others[0])[0])}
@@ -537,95 +482,119 @@ export default function App() {
             {needYou.length ? `${needYou.length} other chat${needYou.length === 1 ? '' : 's'} need${needYou.length === 1 ? 's' : ''} you` : `${others.filter(([, c]) => c.busy).length || others.length} other chat${(others.filter(([, c]) => c.busy).length || others.length) === 1 ? '' : 's'} ${others.some(([, c]) => c.busy) ? 'working' : 'done'}`}
           </button>
         )}
+        {allowEdits && (
+          <button className="pill auto" onClick={stopAllowEdits} title="Agentic OS is editing the notes without asking. Click to make it ask again.">Edits auto-approved <span aria-hidden>✕</span></button>
+        )}
         {dream.at != null && (
-          <button className="pill moon" onClick={() => openTool('dreams')} title="Open the nightly review">
-            <span>Nightly review</span>
+          <button className="pill moon" onClick={() => openTool('dreams')} title="Open Dreams">
+            ☾ <span>Dreamed {new Date(dream.at).toDateString() === new Date(now).toDateString() ? new Date(dream.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).toLowerCase() : new Date(dream.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
             {dream.unread > 0 && <b className="n">{dream.unread}</b>}
           </button>
         )}
-        <span className="pill mono notes-count" title={vaultRoot}>{notes} notes in {vaultRoot.split(/[\\/]/).filter(Boolean).pop() || 'your workspace'}</span>
-        {provider && (
-          <button className={`pill engine-chip${brain?.ready ? '' : ' off'}`} style={{ ['--pc' as string]: provColor }} onClick={() => !onPhone && openTool('settings', 'brain')}
-            title={`Running on ${provider.name} (${provider.method === 'subscription' ? 'your subscription' : provider.method === 'local' ? 'this PC' : 'an API key'}).${onPhone ? '' : ' Click to change.'}`}>
-            <i /><span>{provider.name}</span>
-          </button>
-        )}
         <span className="clock">{new Date(now).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
-        <div className="seg theme-seg nodrag" role="group" aria-label="Theme">
-          <button className={theme === 'dark' ? 'on' : ''} onClick={() => switchTheme('dark')}>Dark</button>
-          <button className={theme === 'light' ? 'on' : ''} onClick={() => switchTheme('light')}>Light</button>
-        </div>
+        {os !== 'mac' && <WindowButtons max={win.max} />}
       </header>
 
-      <Rail tool={tool} onPick={pickTool} onHome={goHome} badges={badges} counts={counts} filesOn={filesOn} onFiles={() => { setFilesOn(!filesOn); store1('aos-files', !filesOn); }}
-        user={basics.userName} brain={provider ? `${provider.name}${provider.method === 'subscription' ? ', your plan' : provider.method === 'local' ? ', this PC' : ', API key'}` : ''} />
+      <Rail tool={tool} onPick={pickTool} onHome={goHome} badges={badges} slim={railSlim} onSlim={setRailSlim}
+        top={os === 'mac' ? <div className="side-mac"><WindowButtons max={win.max} /></div> : undefined}
+        who={{
+          name: basics.userName,
+          ok: !!brain?.ready,
+          line: !provider ? 'Not connected' : !brain?.ready ? `${provider.name}, not ready` : `${provider.name}, ${provider.method === 'subscription' ? 'Claude plan' : 'gateway or API key'}`,
+          onClick: () => openTool('settings', 'brain'),
+        }} />
 
-      <aside className="panel col">
-        {!onPhone && <div className="col-grip" onPointerDown={dragCol} onDoubleClick={resetCol} title="Drag to make the chat wider or narrower. Double-click to reset." />}
-        <Assistant name={aiName} state={assistant} sub={sub}
-          voice={voiceOk ? { muted, toggle: toggleMute } : null}
-          wake={sttOk && !onPhone ? { on: wakeOn, loading: phase === 'loading', toggle: toggleWake } : null} wakeWord="Hey computer" />
-        <Chat items={items} busy={busy} ready={!!brain} name={basics.userName} aiName={aiName} onSend={send} onApprove={approve} onStop={() => window.aos.brain.stop(chatId.current)} onOpen={open}
-          asking={pending} onAsk={askAbout} chat={{ current: currentChat, onNew: newChat, onOpen: openChat, onForget: forgetChat, live, unsaved }}
-          mic={sttOk ? { phase, hold: (d) => listener.current?.pushToTalk(d) } : null} setupNeeded={setupNeeded} />
+      <aside className="col" aria-label="Chat">
+        {/* Minimised: a slim strip with one button to bring the chat back. The chat itself stays mounted (draft kept). */}
+        {chatHidden && (
+          <button className="chat-strip" onClick={() => setChatMin(false)} title="Show the chat" aria-label="Show the chat">
+            <Icon name="chat" size={18} /><span>Chat</span>{chatAttention && <i className={pending != null ? 'needs' : ''} aria-hidden />}
+          </button>
+        )}
+        {solo && (
+          <button className="map-strip" onClick={() => setStageMin(false)} title="Show the notes map beside the chat">Show notes map</button>
+        )}
+        <div className="col-inner" hidden={chatHidden}>
+          <Chat lead={<Orb state={orbState} sub={sub} voice={null} wake={null} />}
+            onMinimise={solo ? undefined : () => setChatMin(true)}
+            choices={brain?.choices}
+            pick={store[currentChat]?.pick || { model: null, effort: null }}
+            onPick={(p) => { const cid = chatId.current; upd(cid, () => ({ pick: p })); syncPick(cid, p); }}
+            items={items} busy={busy} ready={!!brain} name={basics.userName} onSend={send} onApprove={approve} onStop={() => window.aos.brain.stop(chatId.current)} onOpen={open}
+            asking={pending} onAsk={askAbout} chat={{ current: currentChat, onNew: newChat, onOpen: openChat, onForget: forgetChat, live, unsaved }}
+            setupNeeded={setupNeeded} />
+        </div>
       </aside>
 
+      {/* The right-hand panel. At home it is a quiet overview (the notes map, what Agentic OS is reading, the newest
+          deliverables, open actions, last night's dream); a tool or a file takes it over and widens it, and the chat
+          narrows beside it. The line on its left edge can be dragged (or moved with the arrow keys) to resize it. */}
       <main className={`stage${covered ? ' covered' : ''}`}>
-        <section className="panel map">
-          <div className="map-head">
-            <span className="lbl">Node map</span>
-            <span className="small muted">{notes} notes, {graph.links.length} links{read.length > 0 && <> · <b>{read.length}</b> read this chat</>}{wrote.length > 0 && <> · <b>{wrote.length}</b> edited</>}</span>
-            <span className="flex" />
-            <div className="seg" role="group" aria-label="Map shape">
-              <button className={shape === 'brain' ? 'on' : ''} onClick={() => setGraphShape('brain')}>Cluster</button>
-              <button className={shape === 'tree' ? 'on' : ''} onClick={() => setGraphShape('tree')}>Tree</button>
+        {!chatHidden && !solo && (
+          <div className="split-grip" role="separator" aria-orientation="vertical" tabIndex={0}
+            aria-label={wide ? 'Resize the chat and the panel. Arrow keys move it.' : 'Resize the side panel. Arrow keys move it.'}
+            title="Drag to resize. Double-click to reset." onPointerDown={dragSplit} onDoubleClick={resetSplit} onKeyDown={keySplit}><i /></div>
+        )}
+        <div className="ov" aria-label="Overview">
+          <section className="ov-sec ov-map">
+            <h3><span>Your notes</span><em>{notes} in {vaultRoot.split(/[\\/]/).filter(Boolean).pop() || 'your folder'}</em>
+              <button className="linkish" onClick={() => setStageMin(true)} title="Minimise the notes map for more chat space">Hide</button>
+            </h3>
+            <div className="gbox ring-box">
+              <Ring key={ringKey} covered={covered} onOpen={open} onTool={openTool} />
             </div>
-            <button className="ghost small" onClick={() => setGraphKey((k) => k + 1)} title="Redraw the map and fit it to the window">Fit</button>
-          </div>
-          <div className="graph-layer">
-            {showGraph && <Suspense fallback={null}><Graph key={graphKey} data={graph} read={read} wrote={wrote} reading={reading} open={openFile} onOpen={open} paused={covered} onLost={graphLost} /></Suspense>}
-            {graphNote && !covered && <div className="graph-note">{graphNote}</div>}
-            {notes === 0 && <div className="graph-note">No notes yet. Add markdown files to your workspace and they show up here.</div>}
-            <div className="legend-chips">
-              {legend.map((l) => <span key={l.group}><i style={{ background: groupColor(l.group, theme === 'light') }} />{l.label} <b className="num">{l.n}</b></span>)}
-            </div>
-          </div>
-        </section>
-        {openFile && <Viewer path={openFile} stamp={viewerStamp} onClose={() => open(null)} onBack={back} onOpen={open} />}
+          </section>
+          {read.length > 0 && (
+            <section className="ov-sec ov-trail">
+              <h3><span>{busy ? 'Reading now' : 'Read in this chat'}</span><em>{read.length}{wrote.length ? `, ${wrote.length} edited` : ''}</em></h3>
+              <ul>{read.slice(-4).reverse().map((p) => (
+                <li key={p} className={`${p === reading ? 'now' : ''} ${wrote.includes(p) ? 'wrote' : ''}`}><button onClick={() => open(p)} title={p}><i aria-hidden /><span>{p.split('/').pop()}</span></button></li>
+              ))}</ul>
+            </section>
+          )}
+          <section className="ov-sec ov-recent">
+            <h3><span>Latest deliverables</span><button className="linkish" onClick={() => openTool('projects')}>All projects</button></h3>
+            {recent.length === 0 ? <p className="ov-empty">Nothing yet. Files saved in a project&apos;s output folder show up here.</p> : (
+              <ul>{recent.map((d) => (
+                <li key={d.path}><button onClick={() => open(d.path)} title={d.path}><span><b>{d.title}</b><small>{d.project}</small></span><em>{agoMs(d.modified)}</em></button></li>
+              ))}</ul>
+            )}
+          </section>
+          <section className="ov-sec ov-acts">
+            <h3><span>Open actions{openActs ? `, ${openActs}` : ''}</span><button className="linkish" onClick={() => openTool('actions')}>All</button></h3>
+            {actsList.length === 0 ? <p className="ov-empty">Nothing open. Start a note with "action item:" to add one.</p> : (
+              <ul>{actsList.map((a) => (
+                <li key={a.file + a.raw}><button onClick={() => openTool('actions')} title={`${a.name}: ${a.text}`}><i aria-hidden /><span>{a.text}</span><em>{ago(a.added)}</em></button></li>
+              ))}</ul>
+            )}
+          </section>
+          {dream.headline && (
+            <section className="ov-sec ov-dream">
+              <h3><span>Last night</span>{dream.unread > 0 && <em>{dream.unread} new</em>}</h3>
+              <button className="ov-note" onClick={() => openTool('dreams')}>{dream.headline}</button>
+            </section>
+          )}
+        </div>
+        {openFile && <Viewer path={openFile} onClose={() => open(null)} onBack={back} onOpen={open} />}
         {/* The tool stays mounted (just hidden) under an open file, so Back lands on the same project, scroll and search. */}
         {tool && (
           <div style={{ display: openFile ? 'none' : 'contents' }}>
-            {tool === 'dashboard' && <Dashboard onClose={() => setTool(null)} />}
-            {tool === 'settings' && <Settings onClose={() => setTool(null)} start={settingsPage} onSetup={() => { setTool(null); setSetup(true); }} />}
-            {tool === 'skills' && <Skills onClose={() => setTool(null)} onOpen={open} />}
-            {tool === 'projects' && <Projects onClose={() => setTool(null)} onOpen={open} />}
-            {/* Do it: the card's action goes to the assistant as a normal message, so risky steps still ask first. */}
-            {tool === 'dreams' && <Dreams onClose={() => { setTool(null); loadDreams(); }} busy={busy} onDo={(action) => { setTool(null); loadDreams(); newChat(); sendRef.current(action); }} />}
+            {tool === 'settings' && <Settings onClose={() => setTool(null)} start={settingsPage} onOpen={open} chatItems={items.length} onAsk={(t) => { setTool(null); if (!busyRef.current) sendRef.current(t); }} onSetup={() => { setTool(null); setSetup(true); }} />}
+            {tool === 'mail' && <Mail onClose={() => setTool(null)} />}
             {tool === 'actions' && <Actions onClose={() => setTool(null)} onOpen={open} onNotes={() => openTool('notes')} onChanged={loadActs} />}
             {tool === 'notes' && <Notes onClose={() => setTool(null)} onOpen={open} onActions={() => openTool('actions')} onChanged={loadActs} />}
-            {tool === 'connectors' && <Connectors onClose={() => setTool(null)} chatId={currentChat} onBrain={() => openTool('settings', 'brain')} />}
-            {tool === 'health' && <Health onClose={() => setTool(null)} onOpen={open} chatItems={items.length} onAsk={(t) => { setTool(null); if (!busyRef.current) sendRef.current(t); }} />}
+            {tool === 'projects' && <Projects onClose={() => setTool(null)} onOpen={open} />}
+            {/* Do it: the card's action goes to Agentic OS as a normal message, so risky steps still ask first. */}
+            {tool === 'dreams' && <Dreams onClose={() => { setTool(null); loadDreams(); }} busy={busy} onDo={(action) => { setTool(null); loadDreams(); newChat(); sendRef.current(action); }} />}
+            {tool === 'connectors' && <Connectors onClose={() => setTool(null)} />}
           </div>
         )}
       </main>
 
-      <aside className="side">
-        <Charge usage={usage} now={now} brain={provider?.name || 'Claude'} />
-        <Files tree={tree} root={vaultRoot} read={read} reading={reading} open={openFile} onOpen={open} />
-        <section className="panel trail">
-          <h4><span className="lbl">{busy ? 'Reading now' : 'This chat'}</span><span className="mono small muted">{read.length ? `${read.length} files` : ''}</span></h4>
-          {read.length === 0 ? <span className="empty">Files the assistant opens light up on the map and list here.</span> : (
-            <ol>{read.slice(-4).reverse().map((p) => (
-              <li key={p} className={`${p === reading ? 'now' : ''} ${wrote.includes(p) ? 'wrote' : ''}`}><button onClick={() => open(p)} title={p}><i /><span>{p}</span></button></li>
-            ))}</ol>
-          )}
-        </section>
-      </aside>
-
       <ToolsSheet onPick={pickTool} badges={badges} />
-      <Tabs tab={tab} onTab={(t) => { if (t !== 'tools') { setTool(null); open(null); } setTab(t); }} badge={dream.unread} />
+      {/* Narrow windows: the Projects tab opens the Projects tool rather than a file tree. */}
+      <Tabs tab={tab} onTab={(t) => { if (t === 'files') { setTab('files'); openTool('projects'); return; } if (t !== 'tools') { setTool(null); open(null); } setTab(t); }} badge={dream.unread} />
       {palette && <Palette tree={tree} actions={actions} onTool={pickTool} onFile={open} onChat={openChat} onAsk={(t) => { if (!busyRef.current) sendRef.current(t); }} onClose={() => setPalette(false)} />}
-      {onPhone && !linked && <div className="link-lost">Can't reach the PC. Trying again…</div>}
     </div>
   );
 }

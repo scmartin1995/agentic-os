@@ -4,8 +4,9 @@
 export type Theme = 'dark' | 'light';
 const KEY = 'aos-theme';
 
-export const getTheme = (): Theme => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
-const saved = (): Theme => { try { return localStorage.getItem(KEY) === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
+// Look B ("Calm paper") is light first: dark only when someone has chosen it.
+export const getTheme = (): Theme => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+const saved = (): Theme => { try { return localStorage.getItem(KEY) === 'dark' ? 'dark' : 'light'; } catch { return 'light'; } };
 
 export function applyTheme(t: Theme = saved()) {
   document.documentElement.dataset.theme = t;

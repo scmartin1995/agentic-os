@@ -1,6 +1,6 @@
 // Numbers for the Health and Value panels, all counted on the PC (no Claude calls).
 // Sources: the session logs (history.cjs: questions and skill runs), the token ledger (ledger.cjs: cost, models,
-// sizes), the workspace (skills list, projects and when their notes last changed) and the saved chats.
+// sizes), the vault (skills list, projects and when their notes last changed) and the saved chats.
 const vault = require('./vault.cjs');
 const ledger = require('./ledger.cjs');
 const history = require('./history.cjs');
@@ -16,7 +16,7 @@ const ACTIVE_DAYS = 14, QUIET_DAYS = 40;
 // Notes count as "behind" when chats about a project are this much newer than its last note edit.
 const BEHIND_DAYS = 7;
 
-// Starting guesses for minutes saved per use, by skill. the user edits them in the Value panel.
+// Starting guesses for minutes saved per use, by skill. The user edits them in the Value panel.
 const MINUTES = {
   'client-email-draft': 20, 'vault-health-check': 30, 'lessons-review': 5, 'grill-me': 20, 'weekly-review': 30,
   'systematic-debugging': 20, 'one-three-one': 10, spike: 30, learn: 15, 'skill-tidy': 15, 'model-selection': 1,
@@ -70,8 +70,8 @@ async function health(chatItems = 0) {
     return { folder: p.folder, title: p.title, notes: p.modified || null, chat: lastChat, behind, mentionsSince: since };
   }).sort((a, b) => b.behind - a.behind || (Math.max(b.notes || 0, b.chat || 0) - Math.max(a.notes || 0, a.chat || 0)));
 
-  // A session = a run of questions with no gap over 30 minutes. (Chats no longer reset after idle, so this is only a
-  // way of counting sittings.) Claude session ids can't be used: the app gets a new one on almost every question.
+  // A session = a run of questions with no gap over 30 minutes (the same idle gap that starts a fresh
+  // conversation). Claude session ids can't be used: the app gets a new one on almost every question.
   const starts = [];
   let prev = 0;
   for (const q of h.prompts) { if (q.t - prev > 30 * 60 * 1000) starts.push(q.t); prev = q.t; }
@@ -89,7 +89,7 @@ async function health(chatItems = 0) {
     memory,
     sessions: { days: days.map(({ day, n }) => ({ day, n })), today: days[days.length - 1].n, avg: active.length ? active.reduce((a, d) => a + d.n, 0) / active.length : 0 },
     chat: { items: chatItems, long: 40 },
-    jobs: { dreams: j.dreams || null, boneCollector: j.boneCollector || null, notes },
+    jobs: { dreams: j.dreams || null, lessonsPass: j.lessonsPass || null, searchIndex: j.searchIndex || null, mailPull: j.mailPull || null, notes },
   };
 }
 
@@ -136,7 +136,7 @@ async function value(planName = null) {
   // Model fit, from this month's ledger rows.
   const rows = ledger.load().filter((r) => r.t >= monthStart);
   const haiku = perToken(ledger.load(), 'claude-haiku');
-  // A short lookup only counts against the fit when it opened a chat and still didn't get Haiku (the user, 2026-10-04).
+  // A short lookup only counts against the fit when it opened a chat and still didn't get Haiku.
   // Mid-chat ones stay on the chat's model on purpose (pickModel in claude.cjs), a failed run did no work, and rows
   // from before `fresh` was recorded can't say which they were (and often name the wrong model), so they are left out.
   const sized = rows.filter((r) => typeof r.light === 'boolean' && typeof r.fresh === 'boolean' && !r.error);
@@ -163,4 +163,22 @@ async function value(planName = null) {
   };
 }
 
-module.exports = { health, value, QUESTIONS };
+// One row per skill in the vault: last used and uses in the last 30 and 90 days, read from the same session logs as
+// the Health panel. For the skill-tidy skill and the skill_use tool. `loggedSince` is when the log starts, so a
+// skill with no uses is only "unused" for as long as the log reaches back.
+async function skillUse() {
+  const now = Date.now();
+  const h = await history.load();
+  const last = {}, d30 = {}, d90 = {};
+  for (const s of h.skills) {
+    last[s.skill] = Math.max(last[s.skill] || 0, s.t);
+    if (now - s.t < 30 * DAY) d30[s.skill] = (d30[s.skill] || 0) + 1;
+    if (now - s.t < 90 * DAY) d90[s.skill] = (d90[s.skill] || 0) + 1;
+  }
+  const iso = (t) => (t ? new Date(t).toISOString().slice(0, 10) : null);
+  const rows = allSkills().map((s) => ({ name: s.name, lastUsed: iso(last[s.name]), uses30: d30[s.name] || 0, uses90: d90[s.name] || 0 }))
+    .sort((a, b) => a.uses90 - b.uses90 || (a.lastUsed || '').localeCompare(b.lastUsed || '') || a.name.localeCompare(b.name));
+  return { loggedSince: iso(h.since), rows };
+}
+
+module.exports = { health, value, skillUse, QUESTIONS };

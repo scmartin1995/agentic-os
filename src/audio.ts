@@ -1,6 +1,6 @@
-// the assistant's voice. Clips arrive one sentence at a time (numbered) and play back to back through one Web Audio
-// graph, which gives two things v1's <audio> tags could not: a live loudness reading (the stage animates to their
-// actual voice), and playback that phones allow (one audio context, unlocked by the first tap).
+// The assistant's voice. Clips arrive one sentence at a time (numbered) and play back to back through one Web Audio
+// graph, which gives two things v1's <audio> tags could not: a live loudness reading (the stage animates to its
+// actual voice), and playback through one audio context.
 export class Voice {
   onSpeaking: (on: boolean) => void = () => {};
   private ctx: AudioContext | null = null;
@@ -73,7 +73,7 @@ export class Voice {
     this.onSpeaking(false);
   }
 
-  // How loud they are right now, 0 to 1, and the spread across pitch for the bars under them.
+  // How loud it is right now, 0 to 1, and the spread across pitch for the bars under it.
   level(): number {
     if (!this.analyser || !this.playing) return 0;
     this.analyser.getByteFrequencyData(this.bins);

@@ -11,8 +11,10 @@ export const hhmm = (d: Date) => `${p2(d.getHours())}:${p2(d.getMinutes())}`;
 export const ymd = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 export const dayLong = (d: Date) => `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 export const fromYmd = (s: string) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+// "261008" -> Date, the short form registers.cjs stamps each Updates line with.
+export const fromYymmdd = (s: string) => new Date(2000 + Number(s.slice(0, 2)), Number(s.slice(2, 4)) - 1, Number(s.slice(4, 6)));
 export const mondayOf = (d: Date) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
-export const pretty = (p: string) => p.replace(/[_-]/g, ' ');
+export const pretty = (p: string) => p.replace(/_/g, ' ');
 
 // Whole days between an item's "added" date and today (0 = today).
 export const ageDays = (added: string | null) => (added ? Math.max(0, Math.round((fromYmd(ymd(new Date())).getTime() - fromYmd(added.slice(0, 10)).getTime()) / 864e5)) : null);

@@ -1,10 +1,10 @@
 // Saved conversations, so the user can flip back to an old chat after starting a new one.
 // One JSON file per chat in the app's data folder: what the chat panel showed, plus the
-// Claude session id so the assistant picks up where they left off.
+// Claude session id so Agentic OS picks up where it left off.
 const fs = require('fs');
 const path = require('path');
-const { app } = require('electron');
 const store = require('./store.cjs');
+const { app } = require('electron');
 
 const dir = () => path.join(app.getPath('userData'), 'chats');
 const safeId = (id) => (typeof id === 'string' && /^[a-z0-9-]{6,64}$/i.test(id) ? id : null);
@@ -34,7 +34,7 @@ function save(chat) {
 }
 
 // A chat saved while it was still replying (busy: true) and never saved again was cut off, e.g. the app closed.
-// Only from the chat list's own × button, which the user clicks themselves.
+// Only from the chat list's own × button, which the user clicks itself.
 function remove(id) {
   if (!safeId(id)) return false;
   try { fs.unlinkSync(file(id)); return true; } catch { return false; }

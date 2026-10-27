@@ -1,26 +1,23 @@
-// App settings and secrets for the app.
-//  - settings.json (app data folder): who you are, where the workspace is, which LLM is the brain, phone link.
+// App settings and secrets for Agentic OS.
+//  - settings.json (app data folder): who you are, where the vault is, which LLM is the brain.
 //  - secrets.json: API keys and tokens, encrypted with Windows' own per-user encryption (Electron safeStorage, DPAPI).
-//    Keys never go to the window or the phone; they only see "saved, ends in 1a2b".
+//    Keys never go to the window; it only sees "saved, ends in 1a2b".
 // v1 kept these in .env files and environment variables; those still work as overrides (see envOr).
 const fs = require('fs');
 const path = require('path');
 const { app, safeStorage } = require('electron');
 
-const store = require('./store.cjs');
-
 const file = (n) => path.join(app.getPath('userData'), n);
+const store = require('./store.cjs');
 const readJson = store.readJson;
 const writeJson = (f, v) => store.writeJson(f, v, 1); // atomic: never a half-written settings file
 
 const DEFAULTS = {
   onboarded: false,
   userName: '',
-  assistantName: 'Assistant', // what the assistant is called on screen and in its instructions
   vaultPath: '',
   // The brain. id: a key of providers.CATALOG; method: 'subscription' | 'key' | 'local'.
   provider: { id: 'claude', method: 'subscription', baseUrl: '', models: { light: '', standard: '', strong: '' } },
-  remote: { enabled: false, port: 8765 }, // the phone link (remote.cjs); its pairing token is a secret
   budgets: { daily: 5, monthly: 50 }, // USD, for the charge meter on an API key
   wakeWord: true,
 };
@@ -29,7 +26,7 @@ let cache = null;
 function all() {
   if (!cache) {
     const s = readJson(file('settings.json'), {});
-    cache = { ...DEFAULTS, ...s, provider: { ...DEFAULTS.provider, ...(s.provider || {}), models: { ...DEFAULTS.provider.models, ...((s.provider && s.provider.models) || {}) } }, remote: { ...DEFAULTS.remote, ...(s.remote || {}) }, budgets: { ...DEFAULTS.budgets, ...(s.budgets || {}) } };
+    cache = { ...DEFAULTS, ...s, provider: { ...DEFAULTS.provider, ...(s.provider || {}), models: { ...DEFAULTS.provider.models, ...((s.provider && s.provider.models) || {}) } }, budgets: { ...DEFAULTS.budgets, ...(s.budgets || {}) } };
   }
   return cache;
 }
@@ -42,7 +39,7 @@ function set(patch) {
 }
 
 // ---------- secrets ----------
-// name: 'key:<provider id>', 'discord:token', 'discord:userId', 'remote:token'
+// name: 'key:<provider id>'
 const canEncrypt = () => { try { return safeStorage.isEncryptionAvailable(); } catch { return false; } };
 function secrets() { return readJson(file('secrets.json'), {}); }
 function getSecret(name) {

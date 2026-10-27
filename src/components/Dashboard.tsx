@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import type { LedgerSummary, LedgerTotals } from '../types';
+import type { LedgerSummary, LedgerTotals, ToolRow } from '../types';
 
 // Token dashboard: what you actually pay a month, next to what the same tokens would have cost at API prices.
 // "At API prices" is the SDK's own cost figure, which it reports even on a plan, so on a plan it is an equivalent and not a bill.
 const n = (v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}k` : String(Math.round(v));
 const usd = (v: number) => v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`;
-const modelName = (m: string) => m.replace(/^claude-/, '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+// claude-haiku-4-5-20251001 shows as Haiku 4.5; a name that does not look like that is shown as it is
+const modelName = (m: string) => {
+  const k = m.match(/^claude-([a-z]+)-(\d+)(?:-(\d+))?(?:-\d{8})?$/);
+  return k ? `${k[1][0].toUpperCase()}${k[1].slice(1)} ${k[2]}${k[3] ? `.${k[3]}` : ''}` : m;
+};
 
 function Tile({ label, t }: { label: string; t: LedgerTotals }) {
   return (
@@ -22,8 +26,9 @@ export default function Dashboard({ onClose }: { onClose(): void }) {
   const [s, setS] = useState<LedgerSummary | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [others, setOthers] = useState<ToolRow[]>([]);
   const load = () => window.aos.usage.ledger().then(setS);
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); window.aos.tools.summary().then((t) => setOthers(t.items.filter((x) => x.worker))).catch(() => {}); }, []);
 
   const savePrice = async () => {
     await window.aos.usage.setPlanPrice(Number(draft.replace(/[^0-9.]/g, '')) || 0);
@@ -50,7 +55,7 @@ export default function Dashboard({ onClose }: { onClose(): void }) {
         </div>
         <div className="viewer-body">
           {!s ? <span className="muted small">loading…</span> : s.all.questions === 0 ? (
-            <p className="muted">Nothing counted yet. Ask the assistant something and it will show up here; the count starts from the first question after this update.</p>
+            <p className="muted">Nothing counted yet. Ask Agentic OS something and it will show up here; the count starts from the first question after this update.</p>
           ) : <>
             <h3 className="lbl first">This month</h3>
             <div className="dash-bubbles">
@@ -76,7 +81,7 @@ export default function Dashboard({ onClose }: { onClose(): void }) {
                 {times != null && <span className="mono small times">{times >= 10 ? Math.round(times) : times.toFixed(1)}× what you pay</span>}
               </div>
             </div>
-            <p className="muted small">{m!.reads} files read and {m!.edits} edits this month{m!.questions ? `, ${usd(m!.cost / m!.questions)} of API-price work per question` : ''}. {n(fresh)} of the tokens were fresh and {n(cached)} reused from cache, which is cheap but makes up most of the count because every question re-reads the whole chat so far (a shorter chat is a cheaper one).</p>
+            <p className="muted small">{m!.reads} files read and {m!.edits} edits this month{m!.questions ? `, ${usd(m!.cost / m!.questions)} of API-price work per question` : ''}. {n(fresh)} of the tokens were fresh and {n(cached)} reused from cache, which is cheap but makes up most of the count because every answer re-reads the wiki indexes.</p>
 
             <h3 className="lbl">By model, this month</h3>
             <div className="dash-bubbles">
@@ -91,6 +96,20 @@ export default function Dashboard({ onClose }: { onClose(): void }) {
               ))}
             </div>
 
+            {others.length > 0 && <>
+              <h3 className="lbl">Other models, last 30 days</h3>
+              <div className="dash-bubbles">
+                {others.map((w) => (
+                  <div className="bubble model" key={w.id}>
+                    <span className="lbl">{w.name}</span>
+                    <b>{w.d30}</b>
+                    <span className="small muted">{w.d30 === 1 ? 'job' : 'jobs'} · {w.total} all time</span>
+                  </div>
+                ))}
+              </div>
+              <p className="muted small">Counted per job Agentic OS handed over. They run on your company's keys through the gateway, which does not report tokens back, so check credit use on the key page.</p>
+            </>}
+
             <h3 className="lbl">Earlier</h3>
             <div className="dash-tiles">
               <Tile label="Today" t={s.today} />
@@ -103,10 +122,10 @@ export default function Dashboard({ onClose }: { onClose(): void }) {
                 const h = (d.tokens / max) * 70;
                 return (
                   <g key={d.day}>
-                    <rect x={i * 20 + 3} y={76 - h} width={14} height={Math.max(h, d.tokens ? 1 : 0)} rx={2} fill="#22d3ee" opacity={i === 13 ? 1 : 0.55}>
+                    <rect x={i * 20 + 3} y={76 - h} width={14} height={Math.max(h, d.tokens ? 1 : 0)} rx={2} fill="#78a9ff" opacity={i === 13 ? 1 : 0.55}>
                       <title>{`${d.day}: ${n(d.tokens)} tokens, ${usd(d.cost)}`}</title>
                     </rect>
-                    {(i % 3 === 0 || i === 13) && <text x={i * 20 + 10} y={88} textAnchor="middle" fontSize="7" fill="#9ca3af">{d.day.slice(5)}</text>}
+                    {(i % 3 === 0 || i === 13) && <text x={i * 20 + 10} y={88} textAnchor="middle" fontSize="7" fill="#a8a8a8">{d.day.slice(5)}</text>}
                   </g>
                 );
               })}

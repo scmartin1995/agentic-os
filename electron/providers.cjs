@@ -1,102 +1,67 @@
-// Which LLM is the assistant's brain, and how the user signs in to it.
+// How Agentic OS connects to Claude, and how the user signs in. Claude is the only brain.
 //
-// Every provider can be reached one of two ways, and onboarding offers whichever exist:
-//   - "subscription": the user's own paid plan, signed in through the provider's OWN sign-in flow in its own
-//     official command-line app (Claude Code, Codex, Gemini CLI). This app opens that flow in a terminal window and
-//     afterwards only asks "are you signed in?". It never sees, reads or stores the login.
-//   - "key": an API key the user pastes. It is checked with a free "list models" call, then saved encrypted
-//     (settings.cjs). It is only ever sent to that provider's own address.
-//   - "local": a model server on this PC (Ollama, LM Studio). No login.
-//
-// Engines (who does the work):
-//   claude    - Claude Agent SDK (claude.cjs). Everything: connectors, helper agents, plan meter.
-//   universal - this app's own agent loop over any OpenAI-compatible API (universal.cjs). Same tools, same
-//               ask-first gate and backups; no claude.ai connectors or helpers.
-//   codex / agycli (geminicli is kept but no longer offered) - the provider's CLI does the work in its own sandbox (cli-engine.cjs). Chat and file work;
-//               the CLI's own safety rules apply instead of the assistant's cards. Not yet tested against the real CLIs.
+// Three ways in, whichever the user picks in setup or Settings > Brain:
+//   - "key" with an address: an organisation's gateway (an address and a key), checked and saved here (testGateway,
+//     save, and importSettings to take over what Claude Code on this PC already has; see gateway.cjs).
+//   - "key" without an address: an Anthropic API key, checked with a free "list models" call, then saved encrypted
+//     (settings.cjs). It is only ever sent to Anthropic.
+//   - "subscription": the user's own Claude plan, signed in through Claude Code's OWN sign-in flow. This app opens
+//     that flow in a terminal window and afterwards only asks "are you signed in?". It never sees, reads or stores
+//     the login.
+// The engine that does the work is claude.cjs (the Claude Agent SDK).
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 const settings = require('./settings.cjs');
+const platform = require('./platform.cjs');
+const gw = require('./gateway.cjs');
 
 const CATALOG = [
   {
-    id: 'claude', name: 'Claude', by: 'Anthropic', color: '#d97757', level: 'full',
-    methods: ['subscription', 'key'], engine: { subscription: 'claude', key: 'claude' },
-    keyUrl: 'https://console.anthropic.com/settings/keys', keyLooks: 'sk-ant-…',
-    blurb: 'Everything the app can do: connected apps, helper agents and the plan meter.',
-    subscription: 'Your Claude Pro or Max plan, through Claude Code.',
-  },
-  {
-    id: 'openai', name: 'ChatGPT', by: 'OpenAI', color: '#10a37f', level: 'core',
-    methods: ['subscription', 'key'], engine: { subscription: 'codex', key: 'universal' },
-    baseUrl: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys', keyLooks: 'sk-…',
-    cli: { cmd: 'codex', pkg: '@openai/codex', login: 'codex login', name: 'Codex' },
-    blurb: 'Chat, files, edits with backups, voice and the ask-first cards.',
-    subscription: 'Your ChatGPT Plus or Pro plan, through OpenAI\'s Codex app.',
-  },
-  {
-    // Google closed the Gemini CLI to free personal accounts ("client no longer supported", seen 2026-10-07), so
-    // Gemini is key-only here. The Google account sign-in lives under Antigravity below.
-    id: 'gemini', name: 'Gemini', by: 'Google (API key)', color: '#4c8df6', level: 'core',
-    methods: ['key'], engine: { key: 'universal' },
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', keyUrl: 'https://aistudio.google.com/apikey', keyLooks: 'AIza…',
-    blurb: 'Chat, files, edits with backups, voice and the ask-first cards.',
-  },
-  {
-    id: 'antigravity', name: 'Antigravity', by: 'Google account', color: '#8b7cf6', level: 'core',
-    methods: ['subscription'], engine: { subscription: 'agycli' },
-    cli: { cmd: 'agy', pkg: 'Google.AntigravityCLI', install: 'winget install --id Google.AntigravityCLI -e --accept-source-agreements --accept-package-agreements', login: 'agy', name: 'Antigravity CLI' },
-    blurb: 'Your Google account, through Google\'s Antigravity command line. Also draws pictures.',
-    subscription: 'Your Google account, through Google\'s Antigravity CLI (agy).',
-  },
-  {
-    id: 'local', name: 'On this PC', by: 'Ollama or LM Studio', color: '#a3a3a3', level: 'core',
-    methods: ['local'], engine: { local: 'universal' },
-    baseUrl: 'http://localhost:11434/v1',
-    blurb: 'A model running on this computer. Private and free; needs a model that can use tools.',
-  },
-  {
-    id: 'custom', name: 'Another provider', by: 'OpenRouter, Groq, xAI, Mistral, DeepSeek…', color: '#c4b5fd', level: 'core',
-    methods: ['key'], engine: { key: 'universal' }, baseUrl: '',
-    presets: [
-      { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' }, { name: 'Groq', url: 'https://api.groq.com/openai/v1' },
-      { name: 'xAI', url: 'https://api.x.ai/v1' }, { name: 'Mistral', url: 'https://api.mistral.ai/v1' },
-      { name: 'DeepSeek', url: 'https://api.deepseek.com/v1' },
-    ],
-    blurb: 'Any service that speaks the OpenAI API. Paste its address and key.',
+    id: 'claude', name: 'Claude', by: 'Anthropic', color: '#be95ff',
+    methods: ['key', 'subscription'],
+    keyUrl: 'https://console.anthropic.com/settings/keys', keyLooks: 'the key you were given',
+    blurb: 'Claude, through your organisation\'s gateway (an address and a key), an Anthropic API key, or a Claude plan.',
+    subscription: 'Your own Claude plan, through Claude Code.',
   },
 ];
-const byId = (id) => CATALOG.find((p) => p.id === id) || CATALOG[0];
+const byId = () => CATALOG[0];
+// The last gateway check: which header the gateway took the key in, remembered so save() can store it.
+let lastProbe = { base: '', keyHeader: '' };
 
 // What the window is allowed to see: the catalog, the saved choice, and whether a key is saved (never the key).
 function state() {
   const p = settings.get('provider');
-  const def = byId(p.id);
+  const def = byId();
   return {
-    catalog: CATALOG.map(({ engine, ...c }) => ({ ...c, engines: engine })),
-    current: { id: def.id, method: p.method, baseUrl: p.baseUrl || def.baseUrl || '', models: p.models, engine: def.engine[p.method] || 'claude', key: settings.hint(`key:${def.id}`), price: p.price || null },
+    catalog: CATALOG,
+    current: { id: def.id, method: def.methods.includes(p.method) ? p.method : def.methods[0], baseUrl: p.baseUrl || '', models: p.models, key: settings.hint('key:claude'), price: p.price || null, gateway: gatewayState(p) },
     encrypted: settings.canEncrypt(),
   };
 }
 
-// The resolved brain, for the engines (main process only: includes the key).
+// What the window may know about the gateway settings: the style and switches, and the names (not values) of extra headers.
+function gatewayState(p) {
+  const g = p.gateway || {};
+  const h = gw.parseHeaders(settings.getSecret('headers:claude'));
+  return { style: g.style === 'bedrock' ? 'bedrock' : 'anthropic', disableBetas: !!g.disableBetas, certFile: g.certFile || '', headerNames: h.ok ? h.names : [], region: g.region || '', keyKind: g.keyVar === 'AWS_BEARER_TOKEN_BEDROCK' ? 'bedrock-key' : 'token' };
+}
+
+// The resolved connection, for the engine (main process only: includes the key).
 function active() {
   const p = settings.get('provider');
-  const def = byId(p.id);
+  const def = byId();
   const method = def.methods.includes(p.method) ? p.method : def.methods[0];
-  const envKey = { openai: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY' }[def.id];
   return {
-    id: def.id, name: def.name, method, engine: def.engine[method],
-    baseUrl: String(p.baseUrl || def.baseUrl || '').replace(/\/+$/, ''),
-    key: method === 'key' ? settings.getSecret(`key:${def.id}`) || (envKey ? settings.envOr(envKey) : '') : '',
-    models: p.models || {}, price: p.price || null, cli: def.cli || null,
+    id: def.id, name: def.name, method,
+    baseUrl: String(p.baseUrl || '').replace(/\/+$/, ''),
+    key: method === 'key' ? settings.getSecret('key:claude') : '',
+    models: p.models || {}, price: p.price || null,
   };
 }
 
-// ---------- API keys ----------
-const NOT_CHAT = /embed|tts|whisper|dall-?e|image|audio|realtime|moderation|transcri|rerank|guard|babbage|davinci|instruct|computer-use|sora|veo|imagen|aqa|learnlm/i;
+// ---------- keys and gateways ----------
+const NOT_CHAT = /embed|moderation|transcri|rerank|guard/i;
 const LIGHT = /mini|flash|haiku|nano|small|lite|instant|8b|:1b|:3b/i;
 const STRONG = /opus|ultra|-pro\b|pro$|max|large|heavy|fable|reason/i;
 
@@ -111,119 +76,187 @@ function suggest(models) {
   return { light: (light || standard || {}).id || '', standard: (standard || {}).id || '', strong: (strong || {}).id || '' };
 }
 
-// Free check that a key (or a local server) works: ask for the model list. Returns { ok, models, suggested, error }.
-async function test({ id, key, baseUrl }) {
-  const def = byId(id);
-  key = String(key || '').trim() || (def.methods.includes('key') ? settings.getSecret(`key:${def.id}`) : '');
-  const base = String(baseUrl || def.baseUrl || '').trim().replace(/\/+$/, '');
+// Network calls for checks go through Chromium's network stack when it is running (it trusts the certificates and proxy
+// this PC is set up with, which a company network usually needs), and plain fetch otherwise.
+function netFetch(url, opts) {
+  try { const { net, app } = require('electron'); if (net && app && app.isReady()) return net.fetch(url, opts); } catch { /* not running inside Electron */ }
+  return fetch(url, opts);
+}
+
+// Free check that a key works: ask for the model list. With an address it is the gateway check (testGateway).
+// Returns { ok, models, suggested, error }.
+async function test({ key, baseUrl, style, headers, disableBetas, model }) {
+  key = String(key || '').trim() || settings.getSecret('key:claude');
+  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
   try {
-    let url, headers;
-    if (def.id === 'claude') {
-      if (!key) return { ok: false, error: 'Paste your key first.' };
-      url = 'https://api.anthropic.com/v1/models?limit=100';
-      headers = { 'x-api-key': key, 'anthropic-version': '2023-06-01' };
-    } else {
-      if (!/^https?:\/\//i.test(base)) return { ok: false, error: 'That address should start with http:// or https://.' };
-      if (!key && def.id !== 'local') return { ok: false, error: 'Paste your key first.' };
-      url = base + '/models';
-      headers = key ? { Authorization: `Bearer ${key}` } : {};
+    if (base) {
+      const h = headers == null ? { ok: true, text: settings.getSecret('headers:claude') } : gw.parseHeaders(headers);
+      if (!h.ok) return { ok: false, error: h.error };
+      return await testGateway(base, key, { style, headers: h.text, disableBetas, model });
     }
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+    if (!key) return { ok: false, error: 'Paste your key first.' };
+    const res = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(15000) });
     if (res.status === 401 || res.status === 403) return { ok: false, error: 'That key was not accepted. Check it was copied whole and is still active.' };
     if (!res.ok) return { ok: false, error: `The service answered with an error (${res.status}).` };
     const body = await res.json();
-    const list = (Array.isArray(body) ? body : body.data || body.models || []).map((m) => ({ id: String(m.id || m.name || '').replace(/^models\//, ''), created: Number(m.created) || Date.parse(m.created_at || '') / 1000 || 0 })).filter((m) => m.id);
-    if (!list.length) return { ok: def.id !== 'local', models: [], suggested: { light: '', standard: '', strong: '' }, error: def.id === 'local' ? 'The server is running but has no models yet. Pull one first (for example: ollama pull qwen3).' : '' };
+    const list = (body.data || []).map((m) => ({ id: String(m.id || ''), created: Date.parse(m.created_at || '') / 1000 || 0 })).filter((m) => m.id);
     return { ok: true, models: list.filter((m) => !NOT_CHAT.test(m.id)).map((m) => m.id).sort(), suggested: suggest(list) };
   } catch (err) {
-    const local = def.id === 'local';
-    return { ok: false, error: local ? 'Nothing answered at that address. Is Ollama (or LM Studio\'s server) running?' : `Could not reach the service: ${String((err && err.message) || err)}` };
+    return { ok: false, error: `Could not reach the service: ${String((err && err.message) || err)}` };
   }
 }
 
+// An organisation's gateway in front of Claude: an address and a key. Works out which header the gateway reads the key
+// from (a bearer token first, then x-api-key), using the gateway's free model list where it has one and a one-token
+// request where it does not. A gateway that speaks Amazon Bedrock's format gets a one-token request in that format.
+// Nothing is sent anywhere but that address. Every failure is one of: not reachable, certificate not trusted, key
+// refused, request shape rejected, or "not a gateway", each with what to ask the gateway's owner for.
+async function testGateway(base, key, { style = 'anthropic', headers = '', model: probeModel = '' } = {}) {
+  if (!/^https?:\/\//i.test(base)) return { ok: false, error: 'That address should start with https:// (or http://).', kind: 'address' };
+  const extra = {};
+  for (const l of String(headers || '').split('\n').filter(Boolean)) extra[l.slice(0, l.indexOf(':')).trim()] = l.slice(l.indexOf(':') + 1).trim();
+  const fail = (kind, error) => ({ ok: false, kind, error: error || gw.TEXT[kind] });
+  const netFail = (err) => fail(gw.netErrorKind(err));
+  const nothing = { light: '', standard: '', strong: '' };
+  const send = (url, opts) => netFetch(url, { redirect: 'error', ...opts, signal: AbortSignal.timeout(opts.method === 'POST' ? 20000 : 15000) });
+  // an answer that proves the address and key are taken even though the request itself was refused
+  const accepted = async (res) => {
+    const text = await res.text().catch(() => '');
+    if (!/^\s*\{/.test(text)) return { bad: fail('notGateway') };
+    if ((res.status === 400 || res.status === 422) && gw.SHAPE.test(text)) return { bad: fail('shape') };
+    return { good: true };
+  };
+
+  if (style === 'bedrock') {
+    if (!key && !Object.keys(extra).length) return fail('refused', 'Paste the key the gateway gave you first (or add the header it asks for).');
+    const model = encodeURIComponent(String(probeModel || '').trim() || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'); // the model name the user pinned, else a plain guess: any answer that names the model still proves the address and key
+    const h = { 'content-type': 'application/json', ...extra, ...(key ? { Authorization: `Bearer ${key}` } : {}) };
+    let res;
+    try { res = await send(`${base}/model/${model}/invoke`, { method: 'POST', headers: h, body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 1, messages: [{ role: 'user', content: '.' }] }) }); }
+    catch (err) { return netFail(err); }
+    if (res.status === 401 || res.status === 403) return fail('refused');
+    if (res.status >= 500) return fail('other', `The gateway answered with an error (${res.status}). Ask its owner whether it is running.`);
+    const a = await accepted(res);
+    if (a.bad) return a.bad;
+    lastProbe = { base, keyHeader: 'bearer' };
+    return { ok: true, models: [], suggested: nothing, keyHeader: 'bearer', style }; // Bedrock gateways have no model list to read: the model names are typed in
+  }
+
+  if (!key && !Object.keys(extra).length) return fail('refused', 'Paste your key first.');
+  const styles = key ? [['bearer', { Authorization: `Bearer ${key}` }], ['x-api-key', { 'x-api-key': key }]] : [['bearer', {}]];
+  const common = { 'anthropic-version': '2023-06-01', ...extra };
+  let refused = false;
+  for (const [keyHeader, h] of styles) {
+    let res;
+    try { res = await send(`${base}/v1/models?limit=1000`, { headers: { ...common, ...h } }); }
+    catch (err) { return netFail(err); }
+    if (res.status === 401 || res.status === 403) { refused = true; continue; }
+    if (res.ok) {
+      const body = await res.json().catch(() => null);
+      if (!body || typeof body !== 'object') return fail('notGateway'); // a sign-in page or similar, not the gateway
+      const list = (Array.isArray(body) ? body : body.data || body.models || []).map((m) => ({ id: String(m.id || m.name || ''), created: Number(m.created) || Date.parse(m.created_at || '') / 1000 || 0 })).filter((m) => m.id && /claude|anthropic/i.test(m.id));
+      lastProbe = { base, keyHeader };
+      return { ok: true, models: list.map((m) => m.id).sort(), suggested: suggest(list), keyHeader, style };
+    }
+    // no model list on this gateway: a one-token request shows whether the address and key are taken
+    let r2;
+    try { r2 = await send(`${base}/v1/messages`, { method: 'POST', headers: { ...common, ...h, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'claude-check', max_tokens: 1, messages: [{ role: 'user', content: '.' }] }) }); }
+    catch (err) { return netFail(err); }
+    if (r2.status === 401 || r2.status === 403) { refused = true; continue; }
+    if (r2.status >= 500) return fail('other', `The gateway answered with an error (${r2.status}). Ask its owner whether it is running.`);
+    const a = await accepted(r2);
+    if (a.bad) return a.bad;
+    lastProbe = { base, keyHeader };
+    return { ok: true, models: [], suggested: nothing, keyHeader, style }; // an error naming the model still proves the address and key
+  }
+  return refused ? fail('refused') : fail('unreachable');
+}
+
 // Save the choice made in onboarding or Settings. A key is stored encrypted and never handed back.
-function save({ id, method, key, baseUrl, models, price }) {
+// `gateway`: { style, headers, disableBetas, certFile }; headers is text (replaces what was saved; '' clears it) or left out (keeps it).
+function save({ id, method, key, baseUrl, models, price, gateway }) {
   const def = byId(id);
   if (!def.methods.includes(method)) return { ok: false, error: 'That way of signing in is not offered for this provider.' };
+  const g = gateway || {};
+  if (g.headers != null) {
+    const h = gw.parseHeaders(g.headers);
+    if (!h.ok) return { ok: false, error: h.error };
+    settings.setSecret('headers:claude', h.text);
+  }
+  const bedrock = def.id === 'claude' && g.style === 'bedrock';
   if (method === 'key' && key) settings.setSecret(`key:${def.id}`, String(key).trim());
-  if (method === 'key' && !settings.getSecret(`key:${def.id}`) && !(def.id === 'claude' && settings.envOr('ANTHROPIC_API_KEY'))) return { ok: false, error: 'No key saved yet.' };
+  if (method === 'key' && !settings.getSecret(`key:${def.id}`) && !(def.id === 'claude' && settings.envOr('ANTHROPIC_API_KEY')) && !(bedrock && String(baseUrl || '').trim())) return { ok: false, error: 'No key saved yet.' };
   const prev = settings.get('provider');
   const same = prev.id === def.id;
+  const pg = (same && prev.gateway) || {};
   settings.set({ provider: {
     id: def.id, method,
     baseUrl: String(baseUrl != null ? baseUrl : same ? prev.baseUrl : '').trim(),
     models: { light: '', standard: '', strong: '', ...(same ? prev.models : {}), ...(models || {}) },
     price: price !== undefined ? price : same ? prev.price || null : null,
+    keyHeader: lastProbe.keyHeader && lastProbe.base === String(baseUrl || '').trim().replace(/\/+$/, '') ? lastProbe.keyHeader : same ? prev.keyHeader || '' : '',
+    gateway: {
+      style: g.style ? (g.style === 'bedrock' ? 'bedrock' : 'anthropic') : pg.style || 'anthropic',
+      disableBetas: g.disableBetas != null ? !!g.disableBetas : !!pg.disableBetas,
+      certFile: g.certFile != null ? String(g.certFile).trim() : pg.certFile || '',
+      // Bedrock style: which variable holds the key, whether Claude Code skips AWS signing, the AWS region, and plain extra settings
+      keyVar: g.keyVar ? (g.keyVar === 'AWS_BEARER_TOKEN_BEDROCK' ? 'AWS_BEARER_TOKEN_BEDROCK' : 'ANTHROPIC_AUTH_TOKEN') : pg.keyVar || 'ANTHROPIC_AUTH_TOKEN',
+      skipAuth: g.skipAuth != null ? !!g.skipAuth : pg.skipAuth !== false,
+      region: g.region != null ? String(g.region).trim().replace(/[^\w-]/g, '').slice(0, 30) : pg.region || '',
+      extraEnv: g.extraEnv != null ? g.extraEnv : pg.extraEnv || {},
+      modelOverrides: g.modelOverrides != null ? g.modelOverrides : pg.modelOverrides || {},
+    },
   } });
   return { ok: true };
 }
-function forgetKey(id) { settings.setSecret(`key:${byId(id).id}`, ''); return true; }
 
-// ---------- subscriptions: the providers' own command-line apps ----------
-const which = (cmd) => { try { const r = spawnSync('where', [cmd], { encoding: 'utf8', windowsHide: true, timeout: 8000 }); return r.status === 0 ? r.stdout.split(/\r?\n/).filter(Boolean) : []; } catch { return []; } };
-// npm puts a .cmd launcher on the PATH; prefer it over the extension-less shell script next to it.
-function cliPath(cmd) { const found = which(cmd); return found.find((f) => /\.(cmd|exe|bat)$/i.test(f)) || found[0] || ''; }
-
-function claudeExe() {
-  const dir = path.join(__dirname, '..', 'node_modules', '@anthropic-ai', 'claude-agent-sdk-win32-x64');
-  try { const exe = fs.readdirSync(dir).find((f) => /^claude(\.exe)?$/i.test(f)); return exe ? path.join(dir, exe) : ''; } catch { return ''; }
+// ---------- taking over what Claude Code already has ----------
+// Reads ~/.claude/settings.json (read only), keeps what it found in memory, and tells the window what was found without
+// the key or header values. applyImport() then saves it once the user has confirmed.
+let pendingImport = null;
+function importSettings() {
+  const r = gw.readClaudeSettings();
+  if (!r.ok) { pendingImport = null; return { ok: false, error: r.error }; }
+  pendingImport = r.found;
+  return { ok: true, found: gw.describeImport(r.found) };
+}
+// The pins found in Claude Code's settings win; the gateway's own suggestions fill the gaps.
+const mergePins = (found, suggested) => ({ light: found.light || (suggested || {}).light || '', standard: found.standard || (suggested || {}).standard || '', strong: found.strong || (suggested || {}).strong || '' });
+async function applyImport() {
+  const f = pendingImport;
+  if (!f) return { ok: false, error: 'Nothing to take over. Press the button again.' };
+  if (f.key) settings.setSecret('key:claude', f.key);
+  else if (f.style === 'bedrock') settings.setSecret('key:claude', ''); // a gateway that needs no key: do not keep an old one
+  // check the connection first, so the saved choice carries the key header that worked and any models the gateway lists
+  const checked = f.baseUrl ? await testGateway(f.baseUrl, f.key, { style: f.style, headers: f.headers, model: f.models.standard || f.models.light || f.models.strong }) : null;
+  const ok = !!(checked && checked.ok);
+  const r = save({ id: 'claude', method: 'key', baseUrl: f.baseUrl, models: ok ? mergePins(f.models, checked.suggested) : f.models, gateway: { style: f.style, headers: f.headers || '', disableBetas: f.disableBetas, certFile: f.certFile, keyVar: f.keyVar, skipAuth: f.skipAuth, region: f.region, extraEnv: f.extraEnv, modelOverrides: f.modelOverrides } });
+  if (!r.ok) return r;
+  if (f.style !== 'bedrock' && f.keyHeader && !ok) { const p = settings.get('provider'); settings.set({ provider: { ...p, keyHeader: f.keyHeader } }); } // Claude Code already knew which header the key goes in
+  pendingImport = null;
+  return { ok: true, check: checked ? { ok, error: checked.error || '', kind: checked.kind || '', models: checked.models || [] } : null };
 }
 
-// Is the provider's CLI installed, and (as far as can be told without touching the login) signed in?
-async function cliStatus(id) {
-  const def = byId(id);
-  if (def.id === 'claude') {
-    const a = await require('./claude.cjs').account();
-    return { installed: !!claudeExe(), signedIn: a.signedIn && !/api.?key/i.test(a.source) ? true : a.signedIn, plan: a.plan, who: a.email, error: a.ok ? '' : a.error };
-  }
-  if (!def.cli) return { installed: false, signedIn: false };
-  const exe = cliPath(def.cli.cmd);
-  if (!exe) return { installed: false, signedIn: false, pkg: def.cli.pkg, name: def.cli.name };
-  let signedIn = false;
-  if (def.id === 'openai') {
-    // "codex login status" exits 0 when signed in
-    try { const r = spawnSync(`"${exe}" login status`, { shell: true, encoding: 'utf8', windowsHide: true, timeout: 15000 }); signedIn = r.status === 0 && !/not logged in/i.test((r.stdout || '') + (r.stderr || '')); } catch { /* unknown */ }
-  } else if (def.id === 'antigravity') {
-    // "agy models" asks Google for the model list, so it only succeeds with a working sign-in.
-    // Verified signed in on 2026-10-07; the signed-out case has not been seen.
-    try { const r = spawnSync(`"${exe}" models`, { shell: true, encoding: 'utf8', windowsHide: true, timeout: 20000 }); signedIn = r.status === 0 && /gemini|claude/i.test(r.stdout || ''); } catch { /* unknown */ }
-  }
-  return { installed: true, signedIn, name: def.cli.name };
+function forgetKey() { settings.setSecret('key:claude', ''); return true; }
+
+// ---------- the user's own Claude plan, through Claude Code ----------
+const claudeExe = () => platform.claudeExe();
+
+// Is Claude Code signed in, and (as far as can be told without touching the login) as what?
+async function cliStatus() {
+  const a = await require('./claude.cjs').account();
+  return { installed: !!claudeExe(), signedIn: a.signedIn, plan: a.plan, who: a.email, error: a.ok ? '' : a.error };
 }
 
-// Opens the provider's own sign-in in a normal terminal window, so the login happens entirely in their app.
-function openLogin(id) {
-  const def = byId(id);
-  const env = { ...process.env };
-  let line;
-  if (def.id === 'claude') {
-    const exe = claudeExe();
-    if (!exe) return { ok: false, error: 'The bundled Claude Code was not found. Run npm install in the app folder.' };
-    delete env.ANTHROPIC_API_KEY; delete env.ANTHROPIC_AUTH_TOKEN; // sign in with the claude.ai account, not a key
-    env.DISABLE_AUTOUPDATER = '1'; // it must never replace itself while the assistant uses it
-    line = `"${exe}" /login`;
-  } else if (def.cli) {
-    if (!cliPath(def.cli.cmd)) return { ok: false, error: `${def.cli.name} is not installed yet.` };
-    line = def.cli.login;
-  } else return { ok: false, error: 'This provider has no sign-in; it uses a key.' };
+// Opens Claude Code's own sign-in in a normal terminal window, so the login happens entirely in Anthropic's app.
+function openLogin() {
+  const exe = claudeExe();
+  if (!exe) return { ok: false, error: 'The bundled Claude Code was not found. Run npm install in the app folder.' };
   try {
-    spawn('cmd.exe', ['/d', '/s', '/c', `start "Sign in for Agentic OS" cmd /k ${line}`], { detached: true, stdio: 'ignore', env, windowsVerbatimArguments: true }).unref();
+    const run = platform.loginSpawn(exe, gw.ROUTING_VARS); // not the key or gateway: the claude.ai account
+    spawn(run.cmd, run.args, run.options).unref();
     return { ok: true };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 }
 
-// Installs the provider's official CLI from npm (only when the user presses Install in onboarding).
-function cliInstall(id) {
-  const def = byId(id);
-  if (!def.cli) return Promise.resolve({ ok: false, error: 'Nothing to install for this provider.' });
-  return new Promise((resolve) => {
-    let out = '';
-    const p = spawn(def.cli.install || `npm install -g ${def.cli.pkg}`, { shell: true, windowsHide: true });
-    p.stdout.on('data', (d) => { out += d; });
-    p.stderr.on('data', (d) => { out += d; });
-    p.on('error', (e) => resolve({ ok: false, error: String(e.message || e) }));
-    p.on('close', (code) => resolve(code === 0 && cliPath(def.cli.cmd) ? { ok: true } : { ok: false, error: out.trim().split(/\r?\n/).slice(-3).join(' ') || `npm exited with ${code}` }));
-  });
-}
-
-module.exports = { CATALOG, byId, state, active, test, save, forgetKey, suggest, cliStatus, cliPath, openLogin, cliInstall, claudeExe };
+module.exports = { CATALOG, byId, state, active, test, testGateway, save, importSettings, applyImport, forgetKey, suggest, cliStatus, openLogin, claudeExe };

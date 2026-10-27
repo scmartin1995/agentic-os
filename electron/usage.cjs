@@ -2,15 +2,16 @@
 //  - plan mode: claude.ai plan windows (5-hour session, 7-day week) as reported by Claude Code.
 //    Last known values are kept on disk so the meter has something to show at startup.
 //  - api mode:  spend vs a daily and monthly budget
-//    (AGENTIC_OS_DAILY_BUDGET / AGENTIC_OS_MONTHLY_BUDGET, defaults $5 / $50).
+//    (AOS_DAILY_BUDGET / AOS_MONTHLY_BUDGET, defaults $5 / $50).
+const fs = require('fs');
 const path = require('path');
-const { app } = require('electron');
 const store = require('./store.cjs');
+const { app } = require('electron');
 
 const file = () => path.join(app.getPath('userData'), 'usage.json');
 const budgets = () => { try { return require('./settings.cjs').get('budgets') || {}; } catch { return {}; } };
-const daily = () => Number(process.env.AGENTIC_OS_DAILY_BUDGET || budgets().daily || 5);
-const monthly = () => Number(process.env.AGENTIC_OS_MONTHLY_BUDGET || budgets().monthly || 50);
+const daily = () => Number(process.env.AOS_DAILY_BUDGET || budgets().daily || 5);
+const monthly = () => Number(process.env.AOS_MONTHLY_BUDGET || budgets().monthly || 50);
 
 function load() { return { days: {}, plan: {}, ...store.readJson(file(), {}) }; }
 function save(d) { store.tryWriteJson(file(), d); }
@@ -41,14 +42,6 @@ function get(mode) {
       return w.resetsAt && w.resetsAt < Date.now() ? { used: 0, resetsAt: null, seen: w.seen } : w;
     };
     return { mode: 'plan', planName: d.planName || null, session: win('five_hour'), week: win('seven_day') };
-  }
-  if (mode === 'sub') {
-    // ChatGPT or Google plan through their own CLI: they don't report limits, so count the tokens used here.
-    const ledger = require('./ledger.cjs');
-    const rows = ledger.load();
-    const start = new Date(now); start.setHours(0, 0, 0, 0);
-    const sum = (from) => rows.filter((r) => r.t >= from).reduce((n, r) => n + ledger.tokens(r), 0);
-    return { mode: 'sub', day: { tokens: sum(start.getTime()) }, week: { tokens: sum(Date.now() - 7 * 24 * 3600 * 1000) } };
   }
   const day = now.toISOString().slice(0, 10);
   const month = day.slice(0, 7);

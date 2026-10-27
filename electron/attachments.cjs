@@ -1,5 +1,5 @@
-// Files the user drops or pastes into the chat. Each one is copied into a folder outside the workspace
-// (so it never clutters the graph), one sub-folder per day, and the assistant reads it from there.
+// Files the user drops or pastes into the chat. Each one is copied into a folder outside the vault
+// (so it never clutters the graph), one sub-folder per day, and Agentic OS reads it from there.
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -19,18 +19,20 @@ function save(name, bytes) {
   return { path: dest, name: safe };
 }
 
-// Only paths this module wrote are passed on to the assistant.
+// Only paths this module wrote are passed on to Agentic OS.
 const isMine = (p) => typeof p === 'string' && path.resolve(p).startsWith(dir() + path.sep);
 
-// Keep 30 days of attachments.
-function prune(days = 30) {
-  try {
-    const cutoff = Date.now() - days * 864e5;
-    for (const d of fs.readdirSync(dir())) {
-      const t = Date.parse(d);
-      if (!isNaN(t) && t < cutoff) fs.rmSync(path.join(dir(), d), { recursive: true, force: true });
-    }
-  } catch { /* nothing to prune */ }
+// Keep 30 days of attachments. Called once the window is up; one day's folder at a time, with a breath in between.
+async function prune(days = 30) {
+  let names = [];
+  try { names = fs.readdirSync(dir()); } catch { return; } // nothing to prune
+  const cutoff = Date.now() - days * 864e5;
+  for (const d of names) {
+    const t = Date.parse(d);
+    if (isNaN(t) || t >= cutoff) continue;
+    try { await fs.promises.rm(path.join(dir(), d), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); } catch { /* next launch */ }
+    await new Promise((r) => setImmediate(r));
+  }
 }
 
 module.exports = { save, isMine, dir, prune };

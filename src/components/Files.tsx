@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { TreeNode } from '../types';
 
-// The workspace's file tree, with a filter box. Files the assistant has read carry a mark, the one
-// they are reading glows, and folders on the way to it open by themselves.
+// The notes folder's file tree, with a filter box. Files Agentic OS has read carry a cyan mark, the one
+// it is reading glows, and folders on the way to it open by themselves.
 function Node({ n, depth, read, reading, open, onOpen, expanded, toggle }: {
   n: TreeNode; depth: number; read: Set<string>; reading: string | null; open: string | null;
   onOpen(p: string): void; expanded: Set<string>; toggle(p: string): void;

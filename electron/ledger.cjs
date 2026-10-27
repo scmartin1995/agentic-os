@@ -3,13 +3,13 @@
 // plan it is an equivalent, not a bill. Rows older than 120 days are dropped.
 const fs = require('fs');
 const path = require('path');
-const { app } = require('electron');
 const store = require('./store.cjs');
+const { app } = require('electron');
 
 const file = () => path.join(app.getPath('userData'), 'ledger.json');
 const KEEP_MS = 120 * 24 * 3600 * 1000;
 
-// Monthly plan prices, for "value for money". AGENTIC_OS_PLAN_PRICE overrides; otherwise a guess by plan name.
+// Monthly plan prices, for "value for money". AOS_PLAN_PRICE overrides; otherwise a guess by plan name.
 const PLAN_PRICES = { pro: 20, max: 100 };
 
 // A plan price typed into the dashboard wins over the env var and the guess.
@@ -23,9 +23,9 @@ function setPlanPrice(v) {
   return saveSettings(s);
 }
 
-// Value panel: what the user's time is worth, and their estimate of minutes saved per use of each skill.
-// The default rate is a placeholder; the user sets their own in the Value panel.
-const DEFAULT_RATE = 50;
+// Value panel: what the user's time is worth, and its estimate of minutes saved per use of each skill.
+// No default rate: the Value panel asks for one. Until then time saved shows without a money figure.
+const DEFAULT_RATE = 0;
 function setHourlyRate(v) {
   const rate = Number(v);
   const s = settings();
@@ -74,7 +74,7 @@ function add(row) {
   const rows = load().filter((r) => Date.now() - r.t < KEEP_MS);
   const cost = ownCost(rows, row);
   rows.push({ t: Date.now(), ...row, cost });
-  store.tryWriteJson(file(), rows); // a failed save is logged; the question's answer is already on screen
+  store.tryWriteJson(file(), rows); // a failed save is logged; the answer is already on screen
   return cost;
 }
 
@@ -137,7 +137,7 @@ function summary(planName, mode) {
   }
 
   const saved = Number(settings().planPrice);
-  const envPrice = Number(process.env.AGENTIC_OS_PLAN_PRICE);
+  const envPrice = Number(process.env.AOS_PLAN_PRICE);
   const key = (planName || '').toLowerCase();
   const price = saved > 0 ? saved : envPrice > 0 ? envPrice : (PLAN_PRICES[key] ?? (planName ? 100 : null));
   return {

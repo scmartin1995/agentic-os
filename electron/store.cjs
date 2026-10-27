@@ -51,12 +51,19 @@ function tryWriteJson(file, value, pretty) {
   try { writeJson(file, value, pretty); return true; } catch (e) { log('could not save', path.basename(file), e); return false; }
 }
 
-// The same safe write for a plain text file (the Notes and Action items panels write markdown into the workspace).
+// The same safe write for a plain text file (the Notes and Action items panels write markdown into the vault).
+// OneDrive and virus scanners hold a file for a moment after it's touched, which makes the rename fail with EPERM or
+// EBUSY, so it tries again for about a second before giving up (and then removes its temporary copy).
 function writeText(file, text) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, text);
-  fs.renameSync(tmp, file);
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(tmp, file); return; } catch (e) {
+      if (i >= 10 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) { try { fs.rmSync(tmp, { force: true }); } catch { /* nothing more to do */ } throw e; }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    }
+  }
 }
 
 module.exports = { readJson, writeJson, tryWriteJson, writeText, log, dataDir };

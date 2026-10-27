@@ -1,4 +1,4 @@
-// What the user asked and which skills ran, read from Claude Code's own session logs for the workspace
+// What the user asked and which skills ran, read from Claude Code's own session logs for the vault
 // (~/.claude/projects/<vault path as a slug>/*.jsonl). Every Claude Code session whose working folder is the
 // vault lands there, the app's and any other, so Health, Value and Dreams start with real history instead of
 // an empty ledger. Read-only. Each file is parsed once and kept; when it grows, only the new lines are read.
@@ -10,15 +10,15 @@ const vault = require('./vault.cjs');
 const DAY = 24 * 3600 * 1000;
 // Claude Code names the folder after the working directory with every non-alphanumeric character as "-".
 const dir = () => path.join(os.homedir(), '.claude', 'projects', vault.ROOT.replace(/[^a-zA-Z0-9]/g, '-'));
-// v2: the brains that aren't Claude write the same kind of log here (universal.cjs), so the panels count them too.
-const ownDir = () => { try { return path.join(require('electron').app.getPath('userData'), 'sessions'); } catch { return ''; } };
+// With a key or a gateway the engine keeps its logs in its own config folder (see engineHome in claude.cjs); both are read.
+const ownDir = () => { try { return path.join(require('electron').app.getPath('userData'), 'engine-home', 'projects', vault.ROOT.replace(/[^a-zA-Z0-9]/g, '-')); } catch { return ''; } };
 const logFiles = () => {
   const out = [];
   for (const d of [dir(), ownDir()]) { if (!d) continue; try { for (const n of fs.readdirSync(d)) if (n.endsWith('.jsonl')) out.push(path.join(d, n)); } catch { /* no logs there yet */ } }
   return out;
 };
 
-// Prompts the app sends on its own (model carry-on, connectors carry-on, nightly review) start with "[" and aren't the user.
+// Prompts the app sends on its own (Lessons pass, model carry-on, dream) start with "[" and aren't the user.
 const isMachine = (t) => /^\s*(\[|<)/.test(t);
 
 const cache = new Map(); // file -> { size, mtime, offset, prompts, skills, mcp }
@@ -45,7 +45,7 @@ function parseLines(text, out) {
   for (const line of text.split('\n')) {
     // cheap string checks first: most lines are tool results and attachments
     const user = line.startsWith('{"') && line.includes('"type":"user"') && line.includes('"type":"text"');
-    const skill = line.includes('"name":"Skill"') || line.includes('"name":"mcp__') || line.includes('"name":"Agent"') || line.includes('"name":"Task"');
+    const skill = line.includes('"name":"Skill"') || line.includes('"name":"mcp__');
     if (!user && !skill) continue;
     let l;
     try { l = JSON.parse(line); } catch { continue; }
@@ -66,12 +66,8 @@ function parseLines(text, out) {
           const [, server, ...tool] = b.name.split('__');
           if (server) out.mcp.push({ t, session: l.sessionId || '', server, tool: tool.join('__') });
         }
-        // Helpers (subagents) are started with the Agent tool, not an mcp__ name; counted as a "helpers" server by kind.
-        if (b.type === 'tool_use' && (b.name === 'Agent' || b.name === 'Task') && b.input && typeof b.input.subagent_type === 'string') {
-          out.mcp.push({ t, session: l.sessionId || '', server: 'helpers', tool: b.input.subagent_type.slice(0, 40) });
-        }
         if (b.type === 'tool_use' && b.name === 'Skill' && b.input && typeof b.input.skill === 'string') {
-          out.skills.push({ t, session: l.sessionId || '', skill: b.input.skill.replace(/^[\w-]+:/, '') });
+          out.skills.push({ t, session: l.sessionId || '', skill: b.input.skill.replace(/^aos:/, '') });
         }
       }
     }

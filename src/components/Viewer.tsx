@@ -3,6 +3,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { FileContent } from '../types';
 import { vaultUrl } from '../types';
+import { revealLabel } from './Projects';
 
 const dirOf = (p: string) => p.split('/').slice(0, -1).join('/');
 function resolveRel(from: string, href: string) {
@@ -27,11 +28,10 @@ function parseCsv(text: string) {
   });
 }
 
-export default function Viewer({ path, stamp, onClose, onBack, onOpen }: { path: string; stamp: number; onClose(): void; onBack(): void; onOpen(p: string): void }) {
+export default function Viewer({ path, onClose, onBack, onOpen }: { path: string; onClose(): void; onBack(): void; onOpen(p: string): void }) {
   const [file, setFile] = useState<FileContent | null>(null);
   const [source, setSource] = useState(false);
-  // Re-reads whenever the path changes or the assistant reopens the same file (stamp), so an edited draft never shows stale.
-  useEffect(() => { setFile(null); setSource(false); window.aos.vault.read(path).then(setFile); }, [path, stamp]);
+  useEffect(() => { setFile(null); setSource(false); window.aos.vault.read(path).then(setFile); }, [path]);
 
   const html = useMemo(() => {
     if (file?.kind !== 'md' || !file.text) return '';
@@ -53,6 +53,7 @@ export default function Viewer({ path, stamp, onClose, onBack, onOpen }: { path:
   };
 
   const canSource = file && (file.kind === 'md' || file.kind === 'html');
+  const isSkill = /\/SKILL\.md$/i.test(path);
   return (
     <div className="viewer-wrap tool" onClick={onClose}>
       <section className="panel viewer" onClick={(e) => e.stopPropagation()}>
@@ -66,7 +67,9 @@ export default function Viewer({ path, stamp, onClose, onBack, onOpen }: { path:
               <button className={source ? 'on' : ''} onClick={() => setSource(true)}>Source</button>
             </span>
           )}
-          <button className="ghost small" onClick={() => window.aos.vault.openExternal(path)}>Open in Windows</button>
+          {/* A skill is its whole folder (SKILL.md plus any references or scripts), so that folder is what gets shown, ready to share */}
+          <button className="ghost small" onClick={() => { window.aos.vault.reveal(isSkill ? path.slice(0, -'/SKILL.md'.length) : path).catch(() => {}); }}>{isSkill ? `${revealLabel} (skill folder)` : revealLabel}</button>
+          <button className="ghost small" onClick={() => window.aos.vault.openExternal(path)}>Open in its own app</button>
           <button className="ghost small" onClick={onClose} aria-label="Close file">✕</button>
         </div>
         <div className="viewer-body">
@@ -74,14 +77,14 @@ export default function Viewer({ path, stamp, onClose, onBack, onOpen }: { path:
             : file.error ? <p className="muted">Couldn't open this file.</p>
             : source && file.text != null ? <pre className="code">{file.text}</pre>
             : file.kind === 'md' ? <article className="md" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
-            : file.kind === 'html' ? <iframe key={stamp} className="frame" title={path} sandbox="allow-scripts" src={vaultUrl(path)} />
+            : file.kind === 'html' ? <iframe className="frame" title={path} sandbox="allow-scripts" src={vaultUrl(path)} />
             : file.kind === 'pdf' ? <iframe className="frame" title={path} src={vaultUrl(path)} />
             : file.kind === 'image' ? <img className="pic" src={vaultUrl(path)} alt={path} />
             : file.kind === 'csv' && file.text != null ? (
               <div className="table-box"><table>{parseCsv(file.text).map((r, i) => <tr key={i}>{r.map((c, j) => i === 0 ? <th key={j}>{c}</th> : <td key={j}>{c}</td>)}</tr>)}</table></div>
             )
             : file.text != null ? <pre className="code">{file.text}</pre>
-            : <div className="muted"><p>{file.note || 'No preview for this file type.'}</p><button className="ghost" onClick={() => window.aos.vault.openExternal(path)}>Open in its Windows app</button></div>}
+            : <div className="muted"><p>{file.note || 'No preview for this file type.'}</p><button className="ghost" onClick={() => window.aos.vault.openExternal(path)}>Open in its own app</button></div>}
         </div>
       </section>
     </div>

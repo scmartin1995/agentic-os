@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { HealthSummary, JobRun } from '../types';
 import { projectColor } from '../colors';
+import { os } from '../aos';
 
 // Health: what's working and what has gone stale - skills by last use, project notes against how recently
 // they came up in chat, sessions per day, this chat's length, and the jobs that run on their own.
@@ -24,7 +25,7 @@ function Job({ name, run, when, idle }: { name: string; run?: JobRun | null; whe
   );
 }
 
-export default function Health({ onClose, onOpen, chatItems, onAsk }: { onClose(): void; onOpen(p: string): void; chatItems: number; onAsk(text: string): void }) {
+export default function Health({ onClose, onOpen, chatItems, onAsk, embedded }: { onClose(): void; onOpen(p: string): void; chatItems: number; onAsk(text: string): void; embedded?: boolean }) {
   const [h, setH] = useState<HealthSummary | null>(null);
   useEffect(() => { window.aos.insights.health(chatItems).then(setH); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -37,13 +38,13 @@ export default function Health({ onClose, onOpen, chatItems, onAsk }: { onClose(
   const young = h && h.since ? Date.now() - h.since < 30 * DAY : true;
 
   return (
-    <div className="viewer-wrap tool" onClick={onClose}>
+    <div className={`viewer-wrap tool${embedded ? ' embedded' : ''}`} onClick={onClose}>
       <section className="panel viewer" onClick={(e) => e.stopPropagation()}>
         <div className="viewer-head">
           <span className="lbl strong">Health</span>
           <span className="small ix-sub">Skills, notes and sessions: what is working and what has gone stale</span>
           <span className="flex" />
-          <button className="ghost small" onClick={onClose} aria-label="Close Health">✕</button>
+          {!embedded && <button className="ghost small" onClick={onClose} aria-label="Close Health">✕</button>}
         </div>
         <div className="viewer-body">
           {!h ? <span className="muted small">reading your history…</span> : (
@@ -61,7 +62,7 @@ export default function Health({ onClose, onOpen, chatItems, onAsk }: { onClose(
                   <div className="srow head"><span>Skill</span><span>Last used</span><span>Use over 30 days</span><span>Uses</span><span /></div>
                   {h.skills.map((s) => (
                     <div className="srow" key={s.name} onClick={() => onOpen(s.path)} style={{ cursor: 'pointer' }} title="Open the skill">
-                      <span className="nm">{s.name}</span>
+                      <span className="nm"><i>aos:</i>{s.name}</span>
                       <span className="muted">{ago(s.last)}</span>
                       <span className={`fresh${s.state === 'quiet' ? ' q' : s.state === 'dead' ? ' d' : ''}`}><i style={{ width: `${s.uses ? Math.max(4, s.share * 100) : 0}%` }} /></span>
                       <span className="mono muted">{s.uses}</span>
@@ -72,7 +73,7 @@ export default function Health({ onClose, onOpen, chatItems, onAsk }: { onClose(
                 <span className="small muted" style={{ marginTop: 10 }}>
                   {young ? 'History only goes back a few days, so unused skills say "No use yet" rather than dead. ' : ''}
                   An unused skill still costs a little in every chat, because its name and description are always loaded.{' '}
-                  <button className="linkish" onClick={() => onAsk('Look at which skills I never use and suggest which to archive or merge. Ask before changing anything.')}>Ask the assistant</button> which ones to archive.
+                  <button className="linkish" onClick={() => onAsk('Run the skill-tidy skill: look at which skills I never use and suggest what to archive or merge. Ask before changing anything.')}>Ask Agentic OS to run skill-tidy</button> to archive the dead ones.
                 </span>
               </div>
 
@@ -110,14 +111,17 @@ export default function Health({ onClose, onOpen, chatItems, onAsk }: { onClose(
                   <div className="ctxmeter">
                     <div className="row"><span className="small muted">This chat</span><span className="mono small" style={long ? { color: 'var(--orange-soft)' } : undefined}>{chatItems} of {h.chat.long} before a fresh one is cheaper</span></div>
                     <span className="pips" style={{ display: 'flex', width: '100%' }}>
-                      {Array.from({ length: 10 }, (_, i) => { const on = i < Math.min(10, Math.round((chatItems / h.chat.long) * 10)); const c = long ? '#f97316' : '#22d3ee'; return <i key={i} className={on ? 'on' : ''} style={on ? { background: c, boxShadow: `0 0 6px ${c}` } : undefined} />; })}
+                      {Array.from({ length: 10 }, (_, i) => { const on = i < Math.min(10, Math.round((chatItems / h.chat.long) * 10)); const c = long ? '#be95ff' : '#78a9ff'; return <i key={i} className={on ? 'on' : ''} style={on ? { background: c, boxShadow: `0 0 6px ${c}` } : undefined} />; })}
                     </span>
                   </div>
                 </div>
                 <div className="panelcard">
                   <div className="ix-sechead" style={{ margin: 0 }}><h3 className="lbl">Running on its own</h3><span className="small ix-sub">what works while you don't</span></div>
-                  <Job name="Nightly review" run={h.jobs.dreams} when="nightly" idle="hasn't run yet" />
-                  <Job name="Workspace watcher" when={`live · ${h.jobs.notes} notes`} />
+                  <Job name="Dreams" run={h.jobs.dreams} when="nightly" idle="hasn't run yet" />
+                  <Job name="Lessons pass" run={h.jobs.lessonsPass} when="every 10 questions" idle="hasn't run since this update" />
+                  <Job name="Search index" run={h.jobs.searchIndex} when="hourly" idle="hasn't run yet" />
+                  {os !== 'mac' && <Job name="Mail pull" run={h.jobs.mailPull} when="every 10 minutes" idle="hasn't run yet" />}
+                  <Job name="Vault watcher" when={`live · ${h.jobs.notes} notes`} />
                 </div>
               </div>
             </div>

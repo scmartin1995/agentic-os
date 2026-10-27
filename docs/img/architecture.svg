@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" width="1280" height="800" font-family="IBM Plex Sans, Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#393939"/></marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#da1e28"/></marker>
+  </defs>
+  <rect width="1280" height="800" fill="#ffffff"/>
+  <text x="24" y="34" font-size="22" font-weight="600" fill="#161616">Agentic OS: components, trust boundaries and network</text>
+  <text x="24" y="54" font-size="13" fill="#525252">Solid arrow = data or control flow. Red = a finding in SECURITY.md. Dashed boxes are trust boundaries (TB1 to TB3).</text>
+
+  <!-- the computer -->
+  <rect x="20" y="70" width="880" height="712" rx="6" fill="#f4f4f4" stroke="#8d8d8d" stroke-dasharray="8 5" stroke-width="1.5"/>
+  <text x="34" y="92" font-size="14" font-weight="600" fill="#393939">User's computer (one OS user; no listening ports)</text>
+
+  <!-- renderer -->
+  <rect x="44" y="120" width="214" height="230" fill="#ffffff" stroke="#0f62fe" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="56" y="144" font-size="14" font-weight="600" fill="#0f62fe">TB1  Renderer page</text>
+  <text x="56" y="166" font-size="13" fill="#161616">sandbox, no Node,</text>
+  <text x="56" y="184" font-size="13" fill="#161616">Content-Security-Policy</text>
+  <text x="56" y="214" font-size="13" fill="#161616">React UI</text>
+  <text x="56" y="232" font-size="13" fill="#161616">markdown, then DOMPurify</text>
+  <text x="56" y="250" font-size="13" fill="#161616">.html notes in a sandboxed</text>
+  <text x="56" y="268" font-size="13" fill="#161616">iframe (scripts allowed)</text>
+  <text x="56" y="298" font-size="13" fill="#da1e28">S-4 loose script policy</text>
+  <text x="56" y="316" font-size="13" fill="#da1e28">S-5 no policy on notes' HTML</text>
+  <text x="56" y="334" font-size="13" fill="#da1e28">S-9 page fully trusted by main</text>
+
+  <!-- main -->
+  <rect x="330" y="120" width="260" height="440" fill="#ffffff" stroke="#393939" stroke-width="2"/>
+  <text x="342" y="144" font-size="14" font-weight="600" fill="#161616">Electron main process</text>
+  <text x="342" y="162" font-size="12" fill="#525252">Node, full user rights</text>
+  <rect x="346" y="178" width="228" height="56" fill="#e0e0e0"/>
+  <text x="358" y="200" font-size="13" font-weight="600" fill="#161616">IPC handlers (about 60)</text>
+  <text x="358" y="220" font-size="12" fill="#393939">main.cjs, api.cjs, preload bridge</text>
+  <rect x="346" y="246" width="228" height="56" fill="#d0e2ff"/>
+  <text x="358" y="268" font-size="13" font-weight="600" fill="#161616">Safety gate</text>
+  <text x="358" y="288" font-size="12" fill="#393939">policy.cjs: denylist, backups</text>
+  <rect x="346" y="314" width="228" height="76" fill="#e0e0e0"/>
+  <text x="358" y="336" font-size="13" font-weight="600" fill="#161616">Engine driver</text>
+  <text x="358" y="356" font-size="12" fill="#393939">claude.cjs, providers, gateway,</text>
+  <text x="358" y="374" font-size="12" fill="#393939">platform: env, models, prompts</text>
+  <rect x="346" y="402" width="228" height="56" fill="#e0e0e0"/>
+  <text x="358" y="424" font-size="13" font-weight="600" fill="#161616">Settings and secrets</text>
+  <text x="358" y="444" font-size="12" fill="#393939">key encrypted by the OS</text>
+  <rect x="346" y="470" width="228" height="76" fill="#e0e0e0"/>
+  <text x="358" y="492" font-size="13" font-weight="600" fill="#161616">Panels' bookkeeping</text>
+  <text x="358" y="512" font-size="12" fill="#393939">chats, ledger, usage, Dreams,</text>
+  <text x="358" y="530" font-size="12" fill="#393939">connectors, history reader</text>
+
+  <!-- claude code -->
+  <rect x="650" y="120" width="230" height="330" fill="#ffffff" stroke="#8a3ffc" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="662" y="144" font-size="14" font-weight="600" fill="#8a3ffc">TB2  Claude Code program</text>
+  <text x="662" y="162" font-size="12" fill="#525252">vendor binary, child process</text>
+  <rect x="664" y="178" width="202" height="64" fill="#e0e0e0"/>
+  <text x="674" y="200" font-size="13" font-weight="600" fill="#161616">Read, Grep, Glob</text>
+  <text x="674" y="220" font-size="12" fill="#da1e28">ungated, anywhere on disk (S-2)</text>
+  <rect x="664" y="252" width="202" height="64" fill="#e0e0e0"/>
+  <text x="674" y="274" font-size="13" font-weight="600" fill="#161616">WebFetch, WebSearch</text>
+  <text x="674" y="294" font-size="12" fill="#da1e28">ungated, any site (S-2)</text>
+  <rect x="664" y="326" width="202" height="52" fill="#d0e2ff"/>
+  <text x="674" y="348" font-size="13" font-weight="600" fill="#161616">Bash, PowerShell, Write, Edit</text>
+  <text x="674" y="366" font-size="12" fill="#393939">asked through the gate</text>
+  <rect x="664" y="388" width="202" height="50" fill="#e0e0e0"/>
+  <text x="674" y="408" font-size="13" font-weight="600" fill="#161616">Plugin from the notes folder</text>
+  <text x="674" y="426" font-size="12" fill="#da1e28">hooks run commands (S-1)</text>
+
+  <!-- stores -->
+  <rect x="44" y="610" width="250" height="150" fill="#ffffff" stroke="#393939"/>
+  <text x="56" y="634" font-size="14" font-weight="600" fill="#161616">App-data folder</text>
+  <text x="56" y="654" font-size="12" fill="#393939">settings.json, secrets.json (encrypted)</text>
+  <text x="56" y="672" font-size="12" fill="#393939">chats, ledger, usage, dreams</text>
+  <text x="56" y="690" font-size="12" fill="#393939">backups (30 days), attachments (30 days)</text>
+  <text x="56" y="708" font-size="12" fill="#393939">engine-home (key or gateway mode)</text>
+  <text x="56" y="734" font-size="12" fill="#da1e28">plain text except the key (S-8, S-10)</text>
+  <rect x="330" y="610" width="260" height="150" fill="#ffffff" stroke="#393939"/>
+  <text x="342" y="634" font-size="14" font-weight="600" fill="#161616">Notes folder (the vault)</text>
+  <text x="342" y="654" font-size="12" fill="#393939">the user's files, skills/, index pages</text>
+  <text x="342" y="672" font-size="12" fill="#393939">.claude-plugin/ manifest (loaded as a</text>
+  <text x="342" y="690" font-size="12" fill="#393939">plugin by the engine)</text>
+  <text x="342" y="716" font-size="12" fill="#da1e28">links not resolved by the path guard (S-6)</text>
+  <rect x="650" y="610" width="230" height="150" fill="#ffffff" stroke="#393939"/>
+  <text x="662" y="634" font-size="14" font-weight="600" fill="#161616">Claude Code config folder</text>
+  <text x="662" y="654" font-size="12" fill="#393939">session logs: every prompt, reply and</text>
+  <text x="662" y="672" font-size="12" fill="#393939">file content read</text>
+  <text x="662" y="698" font-size="12" fill="#393939">Plan mode: the user's own folder,</text>
+  <text x="662" y="716" font-size="12" fill="#393939">with their Claude login</text>
+
+  <!-- arrows inside the computer -->
+  <path d="M258 214 H330" stroke="#393939" stroke-width="2" fill="none" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="270" y="206" font-size="12" fill="#393939">IPC</text>
+  <path d="M590 240 H650" stroke="#393939" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <text x="594" y="232" font-size="11" fill="#393939">spawn + env</text>
+  <path d="M650 280 H600 V274 H590" stroke="#393939" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <text x="596" y="304" font-size="11" fill="#393939">permission</text>
+  <text x="596" y="318" font-size="11" fill="#393939">questions</text>
+  <path d="M460 560 V610" stroke="#393939" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <text x="468" y="590" font-size="11" fill="#393939">read only</text>
+  <path d="M330 520 H170 V610" stroke="#393939" stroke-width="2" fill="none" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="180" y="514" font-size="11" fill="#393939">reads and writes</text>
+  <path d="M590 500 H760 V610" stroke="#393939" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <text x="600" y="494" font-size="11" fill="#393939">history, read only</text>
+  <path d="M720 450 V586 H520 V610" stroke="#393939" stroke-width="2" fill="none" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="526" y="580" font-size="11" fill="#393939">tools read and edit notes</text>
+  <path d="M790 450 V610" stroke="#393939" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <text x="798" y="560" font-size="11" fill="#393939">writes logs</text>
+
+  <!-- network -->
+  <rect x="940" y="70" width="320" height="712" rx="6" fill="#ffffff" stroke="#8d8d8d" stroke-dasharray="8 5" stroke-width="1.5"/>
+  <text x="954" y="92" font-size="14" font-weight="600" fill="#393939">TB3  Network</text>
+  <rect x="960" y="120" width="280" height="108" fill="#d0e2ff" stroke="#0f62fe"/>
+  <text x="972" y="144" font-size="14" font-weight="600" fill="#161616">Model connection</text>
+  <text x="972" y="164" font-size="12" fill="#161616">Anthropic API, or the organisation's</text>
+  <text x="972" y="182" font-size="12" fill="#161616">gateway, which may sit in front of</text>
+  <text x="972" y="200" font-size="12" fill="#161616">Amazon Bedrock. Every question goes</text>
+  <text x="972" y="218" font-size="12" fill="#161616">here. Key sent only here (N-1, N-4)</text>
+  <rect x="960" y="256" width="280" height="76" fill="#ffffff" stroke="#da1e28"/>
+  <text x="972" y="280" font-size="14" font-weight="600" fill="#161616">Any web site or search</text>
+  <text x="972" y="300" font-size="12" fill="#da1e28">model's choice, no approval (N-2, S-2)</text>
+  <rect x="960" y="360" width="280" height="76" fill="#ffffff" stroke="#393939"/>
+  <text x="972" y="384" font-size="14" font-weight="600" fill="#161616">claude.ai connectors</text>
+  <text x="972" y="404" font-size="12" fill="#393939">plan mode only, on demand (N-3)</text>
+  <rect x="960" y="464" width="280" height="76" fill="#ffffff" stroke="#da1e28"/>
+  <text x="972" y="488" font-size="14" font-weight="600" fill="#161616">cdn.jsdelivr.net</text>
+  <text x="972" y="508" font-size="12" fill="#da1e28">connector logos; sends the connector</text>
+  <text x="972" y="526" font-size="12" fill="#da1e28">name, unpinned file (N-6, S-3)</text>
+  <rect x="960" y="568" width="280" height="190" fill="#f4f4f4" stroke="#c6c6c6"/>
+  <text x="972" y="592" font-size="13" font-weight="600" fill="#161616">Not present</text>
+  <text x="972" y="614" font-size="12" fill="#393939">No Agentic OS server or account</text>
+  <text x="972" y="632" font-size="12" fill="#393939">No listening port</text>
+  <text x="972" y="650" font-size="12" fill="#393939">No auto-update</text>
+  <text x="972" y="668" font-size="12" fill="#393939">No telemetry or error reports</text>
+  <text x="972" y="686" font-size="12" fill="#393939">(switched off in the engine)</text>
+  <text x="972" y="712" font-size="12" fill="#393939">Dreams and connect-screen checks</text>
+  <text x="972" y="730" font-size="12" fill="#393939">use the model connection (N-4, N-5)</text>
+
+  <!-- network arrows -->
+  <path d="M880 174 H960" stroke="#393939" stroke-width="2" fill="none" marker-end="url(#a)" marker-start="url(#a)"/>
+  <path d="M880 294 H960" stroke="#da1e28" stroke-width="2" fill="none" marker-end="url(#r)"/>
+  <path d="M880 398 H960" stroke="#393939" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <path d="M460 120 V102 H920 V502 H960" stroke="#da1e28" stroke-width="2" fill="none" marker-end="url(#r)"/>
+  <text x="470" y="97" font-size="11" fill="#da1e28">main process asks for logos</text>
+</svg>

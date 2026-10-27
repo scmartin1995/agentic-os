@@ -1,0 +1,31 @@
+# Builds and tests Agentic OS on real Macs (Apple silicon and Intel), and makes the unsigned .dmg and .zip.
+# Only runs once this project is in a GitHub repository. Signing and notarising are not set up: see README.md, "Mac".
+name: Agentic OS on Mac
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-13] # Apple silicon, Intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - run: npm test
+      - run: node_modules/.bin/electron tools/test-recovery.cjs
+      - run: npm run test:wire
+      - run: npm run test:window
+      - run: npm run dist:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aos-mac-${{ matrix.os }}
+          path: |
+            release/*.dmg
+            release/*.zip

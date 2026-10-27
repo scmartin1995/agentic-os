@@ -1,9 +1,12 @@
-// Where the optional voice tools live (whisper.cpp, Piper, the wake-word model: about 1.1 GB, not in git).
-// The app looks in its own tools/ folder; AOS_TOOLS_DIR points it somewhere else. See docs/voice.md.
+// Where optional voice tools live, if someone adds them (whisper.cpp, Piper, a wake-word model). Agentic OS looks only
+// in its own tools/ folder, or in AOS_TOOLS_DIR. Nothing is borrowed from any other app on the machine.
+const fs = require('fs');
 const path = require('path');
 
 function toolsDir(name) {
-  return path.join(process.env.AOS_TOOLS_DIR || path.join(__dirname, '..', 'tools'), name);
+  const places = [process.env.AOS_TOOLS_DIR, path.join(__dirname, '..', 'tools')].filter(Boolean);
+  for (const p of places) if (fs.existsSync(path.join(p, name))) return path.join(p, name);
+  return path.join(places[places.length - 1], name);
 }
 
 module.exports = { toolsDir };

@@ -1,5 +1,4 @@
-// Dreams: once a night the assistant looks over the last week and hands the user four things worth doing.
-// Agreed with the user 2026-10-04.
+// Dreams: once a night Agentic OS looks over the last week and hands the user four things worth doing.
 //
 // The PC does the counting, the model does the noticing: a local pass builds a short digest (questions,
 // repeated asks, cost, skills, notes vs chats, sessions, project status) and one model call turns it into
@@ -81,7 +80,7 @@ function mark(day, id, status) {
 
 // ---------- the digest ----------
 
-const STOP = new Set('that this with from have what your about there their they them then than when were will would could should into just like make more some only also been does each very want need know look sure okay right please thanks'.split(' '));
+const STOP = new Set('that this with from have what your about there their they them then than when were will would could should into just like make more some only also been does each very want need know look sure okay right please thanks assistant'.split(' '));
 const words = (t) => new Set((t.toLowerCase().match(/[a-z][a-z0-9_]{3,}/g) || []).filter((w) => !STOP.has(w)));
 const jaccard = (a, b) => { let n = 0; for (const w of a) if (b.has(w)) n++; return n / (a.size + b.size - n || 1); };
 const when = (t) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -120,7 +119,7 @@ async function digest() {
     lines.push(`- [${when(p.t)}] ${t}`);
     if (lines.join('\n').length > 8000) break;
   }
-  out.push(`## Questions asked (${week.length} in 7 days; up to the newest ${lines.length} shown, newest first)\n${lines.join('\n') || '- none'}`);
+  out.push(`## the user's questions (${week.length} in 7 days; up to the newest ${lines.length} shown, newest first)\n${lines.join('\n') || '- none'}`);
   if (week.length) used.add('chats');
 
   const reps = repeats(week);
@@ -134,6 +133,7 @@ async function digest() {
 - ${sum.month.questions} questions, ${usd(sum.month.cost)} total
 ${sum.models.map((m) => `- ${m.model}: ${m.questions} questions, ${usd(m.cost)}`).join('\n')}
 - short lookups that opened a chat on a model above Haiku: ${f.heavyLookups.n} (${usd(f.heavyLookups.cost)}${f.heavyLookups.saving != null ? `, about ${usd(f.heavyLookups.saving)} more than Haiku` : ''}); counted over ${f.sizedCount} questions. Short lookups in the middle of a chat stay on the chat's model on purpose (switching re-reads the whole chat), so they are not counted and are not a saving
+- automatic Lessons pass runs: ${f.auto.n} (${usd(f.auto.cost)}). They run on Sonnet on purpose, so don't suggest moving them to Haiku
 - share of tokens that were cache reads: ${f.cacheShare != null ? Math.round(f.cacheShare * 100) + '%' : 'unknown'}
 - chats over 60 messages this month: ${f.longChats}`);
 
@@ -176,7 +176,7 @@ const CARD_SCHEMA = {
           saves: { type: 'string', description: 'Rough saving, e.g. "~20 min/week" or "~$3 a month at API prices". A guess, keep it modest.' },
           savesKind: { type: 'string', enum: ['time', 'money'] },
           button: { type: 'string', description: 'Two to four words for the action button, e.g. "Update the notes".' },
-          action: { type: 'string', description: 'The exact request the assistant will be sent if the user presses the button, written as the user asking the assistant to do it, self-contained (names the files, project or skill).' },
+          action: { type: 'string', description: 'The exact request Agentic OS will be sent if the user presses the button, written as the user asking Agentic OS to do it, self-contained (names the files, project or skill).' },
         },
         required: ['dimension', 'headline', 'why', 'evidence', 'saves', 'savesKind', 'button', 'action'],
       },
@@ -185,15 +185,15 @@ const CARD_SCHEMA = {
   required: ['cards'],
 };
 
-const SYSTEM = `You are the nightly review pass of an assistant in the user's Agentic OS. You read a digest of the user's last week (questions they asked, repeated asks, token costs, skill use, how far project notes lag behind their chats, sessions, project status) and pick the FOUR most useful, concrete things they could do to save time or money, or keep their notes in step with their work.
+const SYSTEM = `You are the nightly "Dreams" pass of Agentic OS, the user's assistant. You read a digest of their last week (questions they asked, repeated asks, token costs, skill use, how far project notes lag behind their chats, sessions, project status) and pick the FOUR most useful, concrete things they could do to save time or money, or keep their notes in step with their work.
 Rules:
 - Only use facts in the digest. Every number in "evidence" must appear in the digest. Aim for four cards about four different things; if there isn't enough for four good ones, return fewer. Never pad, never invent.
-- Look hard at their questions: themes they keep coming back to, tasks they walk the assistant through step by step each time, things they correct the assistant on, and projects they work on that the notes don't reflect.
+- Look hard at their questions: themes they keep coming back to, tasks they walk Agentic OS through step by step each time, things they correct Agentic OS on, and projects they work on that the notes don't reflect.
 - Don't suggest writing up work that the project notes already show as edited today.
-- Prefer: work repeated by hand (could become a skill or a note), notes that have fallen behind what the user talks about, money spent on a heavier model than the job needed, skills that are never used, chats that ran too long.
+- Prefer: work the user repeated by hand (could become a skill or a note), notes that have fallen behind what they talk about, money spent on a heavier model than the job needed, skills that are never used, chats that ran too long.
 - Never repeat anything in "Already handled", or anything with the same gist.
 - Plain words, no jargon, no file paths in the headline. Talk to the user as "you".
-- The action must be something the assistant can do in the workspace or the app when asked, and is sent to it as a normal request (edits still need the user's yes).`;
+- The action must be something Agentic OS can do in the vault or the app when asked, and is sent to it as a normal request (edits still need the user's yes).`;
 
 let running = null;
 let notify = () => {};
@@ -209,7 +209,7 @@ async function run(reason = 'schedule') {
       d = await digest();
       const r = await engine.oneShot({
         system: SYSTEM,
-        prompt: `[Nightly review digest, not from the user]\n\n${d.text}\n\nReturn four cards if the digest supports four distinct, useful ones; fewer only if it truly doesn't.${s.web ? ' Web check is ON, so you MUST run a web search and make exactly ONE of the cards (the last) an outside find: a fresh, relevant tool, technique or news item that fits what the user is working on this week (dimension "outside"). Put the source URL in its evidence, and make the action something the assistant can do with it. The other cards come from the digest as usual. Only skip the outside card if the search finds nothing worth the time.' : ''}`,
+        prompt: `[Dreams digest, not from the user]\n\n${d.text}\n\nReturn four cards if the digest supports four distinct, useful ones; fewer only if it truly doesn't.${s.web ? ' You may use web search for at most ONE card about a fresh, relevant outside resource (dimension "outside"); put the source URL in its evidence.' : ''}`,
         schema: CARD_SCHEMA, web: s.web,
       });
       ledger.add({ model: r.model, input: r.usage.input, output: r.usage.output, cacheRead: r.usage.cacheRead, cacheWrite: r.usage.cacheWrite,

@@ -109,8 +109,8 @@
   <rect x="960" y="120" width="280" height="108" fill="#d0e2ff" stroke="#0f62fe"/>
   <text x="972" y="144" font-size="14" font-weight="600" fill="#161616">Model connection</text>
   <text x="972" y="164" font-size="12" fill="#161616">Anthropic API, or the organisation's</text>
-  <text x="972" y="182" font-size="12" fill="#161616">gateway, which may sit in front of</text>
-  <text x="972" y="200" font-size="12" fill="#161616">Amazon Bedrock. Every question goes</text>
+  <text x="972" y="182" font-size="12" fill="#161616">gateway (Anthropic API format).</text>
+  <text x="972" y="200" font-size="12" fill="#161616">Every question goes</text>
   <text x="972" y="218" font-size="12" fill="#161616">here. Key sent only here (N-1, N-4)</text>
   <rect x="960" y="256" width="280" height="76" fill="#ffffff" stroke="#da1e28"/>
   <text x="972" y="280" font-size="14" font-weight="600" fill="#161616">Any web site or search</text>

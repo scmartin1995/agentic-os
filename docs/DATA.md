@@ -73,10 +73,9 @@ reads them, the key beyond the connection it was issued for.
 **Other outbound traffic (all listed in SECURITY.md section 5):** web fetch/search directed by the model; Dreams' weekly digest (see 4); connector
 logos from `cdn.jsdelivr.net` (connector names only); the connect-screen checks (the key to the address typed, or to `api.anthropic.com`).
 
-**Who holds it after it is sent** is outside Agentic OS: Anthropic (Anthropic API), or the organisation's gateway and its upstream (for the Bedrock
-style, an AWS account). From AWS's documentation read on 2026-10-05: Bedrock model providers have no access to customer accounts, and logging of
-prompts and replies is off unless the account owner turns it on. Neither point is confirmed for any particular organisation's setup; ask the
-gateway's owner about logging, retention and where the data is processed.
+**Who holds it after it is sent** is outside Agentic OS: Anthropic (Anthropic API), or the organisation's gateway and whatever sits behind
+it. Nothing is confirmed for any particular organisation's setup; ask the gateway's owner about logging, retention and where the data is
+processed.
 
 ## 4. Derived and local-only processing
 
@@ -136,7 +135,7 @@ rules apply), the notes.
 ```text
 settings.json   { onboarded, userName, vaultPath,
                   provider:{ id:'claude', method:'subscription'|'key', baseUrl, models:{light,standard,strong}, keyHeader, price,
-                             gateway:{ style, keyVar, skipAuth, region, disableBetas, certFile, extraEnv, modelOverrides } },
+                             gateway:{ disableBetas, certFile } },
                   budgets:{ daily, monthly }, wakeWord }
 secrets.json    { "key:claude": {enc|plain}, "headers:claude": {enc|plain}, "discord:*": ... }
 chats/<id>.json { id, title, updated, busy, sessionId, read:[note paths], wrote:[note paths],

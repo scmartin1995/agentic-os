@@ -159,12 +159,11 @@ export interface ProviderDef {
   blurb: string; subscription?: string; keyUrl?: string; keyLooks?: string;
 }
 export interface Models { light: string; standard: string; strong: string }
-export type GatewayStyle = 'anthropic' | 'bedrock';
 // The gateway settings the window may see: header values never leave the main process, only their names.
-export interface GatewayState { style: GatewayStyle; disableBetas: boolean; certFile: string; headerNames: string[]; region: string; keyKind: 'token' | 'bedrock-key' }
-export interface GatewayExtra { style: GatewayStyle; headers?: string; disableBetas: boolean; certFile: string; region?: string; keyVar?: string }
+export interface GatewayState { disableBetas: boolean; certFile: string; headerNames: string[] }
+export interface GatewayExtra { headers?: string; disableBetas: boolean; certFile: string }
 // What was found in Claude Code's own settings file (never the key or header values).
-export interface ImportFound { style: GatewayStyle; baseUrl: string; keyFrom: string; headerNames: string[]; models: Models; switches: string[]; certFile: string; region: string; extras: string[]; notes: string[] }
+export interface ImportFound { baseUrl: string; keyFrom: string; headerNames: string[]; models: Models; switches: string[]; certFile: string; notes: string[] }
 export interface ProvidersState {
   catalog: ProviderDef[];
   current: { id: string; method: Method; baseUrl: string; models: Models; key: { saved: boolean; tail: string }; price: { in?: number; out?: number } | null; gateway: GatewayState };

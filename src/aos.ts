@@ -1,7 +1,7 @@
 // `window.aos`: everything the screen can ask the app to do, built once on top of Electron's two-call bridge
 // (electron/preload.cjs).
 import type {
-  ActionItem, NoteEntry, NoteWeek, SavedNote, DiscoverReport, OkfMode, OkfResult, Basics, BrainEvent, BrainStatus, ChatSummary, CliStatus, ConnectorMode, GatewayExtra, GatewayStyle, ImportFound, ConnectorsSummary, ToolsSummary, DreamCard, DreamEvent, DreamState, FileContent,
+  ActionItem, NoteEntry, NoteWeek, SavedNote, DiscoverReport, OkfMode, OkfResult, Basics, BrainEvent, BrainStatus, ChatSummary, CliStatus, ConnectorMode, GatewayExtra, ImportFound, ConnectorsSummary, ToolsSummary, DreamCard, DreamEvent, DreamState, FileContent,
   FileType, GraphData, HealthSummary, LedgerSummary, Method, Models, ProjectInfo, ProvidersState, SavedChat, SkillInfo, TreeNode, UsageV2, V1Look, ValueSummary,
   WireApi, WorkersState, SearchHit, SearchStatus, MailState, MailPullResult,
 } from './types';
@@ -140,7 +140,7 @@ const aos = {
   },
   providers: {
     state: call<ProvidersState>('providers:state'),
-    test: (o: { id: string; key?: string; baseUrl?: string; style?: GatewayStyle; headers?: string; disableBetas?: boolean; model?: string }) => bridge.invoke('providers:test', o) as Promise<{ ok: boolean; models?: string[]; suggested?: Models; error?: string; kind?: string }>,
+    test: (o: { id: string; key?: string; baseUrl?: string; headers?: string; disableBetas?: boolean; model?: string }) => bridge.invoke('providers:test', o) as Promise<{ ok: boolean; models?: string[]; suggested?: Models; error?: string; kind?: string }>,
     save: (o: { id: string; method: Method; key?: string; baseUrl?: string; models?: Partial<Models>; price?: { in?: number; out?: number } | null; gateway?: Partial<GatewayExtra> }) => bridge.invoke('providers:save', o) as Promise<{ ok: boolean; error?: string }>,
     importSettings: call<{ ok: boolean; found?: ImportFound; error?: string }>('providers:importSettings'),
     applyImport: call<{ ok: boolean; error?: string; check: { ok: boolean; error: string; kind: string; models: string[] } | null }>('providers:applyImport'),

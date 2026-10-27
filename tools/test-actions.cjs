@@ -234,17 +234,17 @@ test('with a projects/ folder, top-level folders are not projects', () => {
 const OKF = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-okf-'));
 const putO = (rel, text) => { fs.mkdirSync(path.dirname(path.join(OKF, rel)), { recursive: true }); fs.writeFileSync(path.join(OKF, rel), text); };
 const readO = (rel) => fs.readFileSync(path.join(OKF, rel), 'utf8');
-const REG = 'Lumen/Database Team/Records/actionitem-register.md';
-const WEEK = 'Lumen/Database Team/Raw/Notes/261005_Week_Notes.md';
+const REG = 'Acme/Platform Team/Records/actionitem-register.md';
+const WEEK = 'Acme/Platform Team/Raw/Notes/261005_Week_Notes.md';
 const p2t = (n) => String(n).padStart(2, '0');
 const today = new Date();
 const todayTag = `${p2t(today.getFullYear() % 100)}${p2t(today.getMonth() + 1)}${p2t(today.getDate())}`;
 const todayIso = `${today.getFullYear()}-${p2t(today.getMonth() + 1)}-${p2t(today.getDate())}`;
-for (const d of ['Raw', 'Records', 'Sessions']) fs.mkdirSync(path.join(OKF, 'Lumen/Database Team', d), { recursive: true });
-putO('Lumen/README.md', '# Lumen\n');
+for (const d of ['Raw', 'Records', 'Sessions']) fs.mkdirSync(path.join(OKF, 'Acme/Platform Team', d), { recursive: true });
+putO('Acme/README.md', '# Acme\n');
 putO(REG, [
-  '---', 'title: Database Team Action Items', 'concept_class: action-item', 'as_of: 2026-10-01', '---', '',
-  '# Database Team Action Items', '', 'One is open and one is closed.', '',
+  '---', 'title: Platform Team Action Items', 'concept_class: action-item', 'as_of: 2026-10-01', '---', '',
+  '# Platform Team Action Items', '', 'One is open and one is closed.', '',
   '## Where the items stand', '', '| # | Item | Status | Waiting on |', '| --- | --- | --- | --- |',
   '| 1 | Define the handoff | `[CLOSED 260921]` | — |', '| 2 | Chase the MySQLs | `[OPEN]` | Lora |', '',
   '## 1 — Define the handoff `[CLOSED 260921]`', '', '**Summary.** Define the task requirements for the DBA handoff.', '',
@@ -256,8 +256,8 @@ putO(REG, [
 
 test('OKF project: notes go to Raw/Notes/<Monday>_Week_Notes.md and action items to the register', () => {
   vault.setRoot(OKF);
-  assert.ok(A.projects().includes('Database Team'));
-  const w = A.where('Database Team', T(8, 9, 0));
+  assert.ok(A.projects().includes('Platform Team'));
+  const w = A.where('Platform Team', T(8, 9, 0));
   assert.strictEqual(w.file, WEEK);
   assert.strictEqual(w.actions, REG);
 });
@@ -266,7 +266,7 @@ test('OKF project: the register\'s items are listed, with waiting-on, and dates 
   const regs = A.list().items.filter((i) => i.register);
   assert.strictEqual(regs.length, 2);
   const open = regs.find((i) => i.num === 2);
-  assert.strictEqual(open.project, 'Database Team');
+  assert.strictEqual(open.project, 'Platform Team');
   assert.strictEqual(open.done, false);
   assert.strictEqual(open.text, 'Chase the MySQLs (waiting on Lora)');
   assert.strictEqual(open.added, '2026-10-01'); // from the Auto-added line
@@ -278,27 +278,27 @@ test('OKF project: the register\'s items are listed, with waiting-on, and dates 
 
 test('OKF project: close, reopen and update follow the register\'s rules', () => {
   const raw = `register:${REG}#2`;
-  assert.strictEqual(A.close('Database Team', raw).raw, raw);
+  assert.strictEqual(A.close('Platform Team', raw).raw, raw);
   let t = readO(REG);
   assert.match(t, new RegExp(`^## 2 — Chase the MySQLs \`\\[CLOSED ${todayTag}\\]\`$`, 'm'));
   assert.match(t, new RegExp(`^\\| 2 \\| Chase the MySQLs \\| \`\\[CLOSED ${todayTag}\\]\` \\| — \\|$`, 'm'));
   assert.match(t, new RegExp(`- \\[261001\\] Auto-added from today's notes\\.\\n- \\[${todayTag}\\] Closed on his word\\.`));
   assert.match(t, /^Zero are open and two are closed\.$/m);
   assert.match(t, new RegExp(`^as_of: ${todayIso}$`, 'm'));
-  assert.throws(() => A.close('Database Team', raw), /already closed/);
-  A.reopen('Database Team', raw);
+  assert.throws(() => A.close('Platform Team', raw), /already closed/);
+  A.reopen('Platform Team', raw);
   t = readO(REG);
   assert.match(t, /^## 2 — Chase the MySQLs `\[OPEN\]`$/m);
   assert.match(t, /^One is open and one is closed\.$/m);
-  A.update('Database Team', raw, 'Lora replied, two left.');
+  A.update('Platform Team', raw, 'Lora replied, two left.');
   assert.match(readO(REG), new RegExp(`- \\[${todayTag}\\] Reopened on his word\\.\\n- \\[${todayTag}\\] Lora replied, two left\\.`));
-  assert.throws(() => A.update('Database Team', raw, '  '), /needs some words/);
+  assert.throws(() => A.update('Platform Team', raw, '  '), /needs some words/);
   assert.throws(() => A.close('Inbox', raw), /not in this project/);
 });
 
 test('OKF project: a note is written in the week file\'s own format, and "action item" files a new register item', () => {
   putO(WEEK, '## Wednesday — Oct 7 (processed)\n- **6:46am** — Looked at the IDC list\n\n## Thursday — Oct 8\n- **9:55am** — First\n');
-  const r = A.addNote('Database Team', 'Action item: call Phillip\nabout VCLIPRD', T(8, 14, 10));
+  const r = A.addNote('Platform Team', 'Action item: call Phillip\nabout VCLIPRD', T(8, 14, 10));
   assert.strictEqual(r.file, WEEK);
   assert.strictEqual(readO(WEEK), '## Wednesday — Oct 7 (processed)\n- **6:46am** — Looked at the IDC list\n\n## Thursday — Oct 8\n- **9:55am** — First\n- **2:10pm** — Action item: call Phillip\n  about VCLIPRD\n');
   assert.strictEqual(r.action.num, 3);
@@ -307,13 +307,13 @@ test('OKF project: a note is written in the week file\'s own format, and "action
   assert.match(t, /^## 3 — call Phillip about VCLIPRD `\[OPEN\]`$/m);
   assert.ok(t.indexOf('## 3 —') < t.indexOf('## Provenance and decay'), 'the new item goes after the last item, not after the prose');
   assert.match(t, /^\| 3 \| call Phillip about VCLIPRD \| `\[OPEN\]` \| — \|$/m);
-  assert.match(t, /Source: \[`Lumen\/Database Team\/Raw\/Notes\/261005_Week_Notes\.md`\]\(\.\.\/Raw\/Notes\/261005_Week_Notes\.md\)/);
-  A.addNote('Database Team', 'Friday thought', T(9, 8, 5));
+  assert.match(t, /Source: \[`Acme\/Platform Team\/Raw\/Notes\/261005_Week_Notes\.md`\]\(\.\.\/Raw\/Notes\/261005_Week_Notes\.md\)/);
+  A.addNote('Platform Team', 'Friday thought', T(9, 8, 5));
   assert.match(readO(WEEK), /about VCLIPRD\n\n## Friday — Oct 9\n- \*\*8:05am\*\* — Friday thought\n$/);
 });
 
 test('OKF project: notes() reads the week files back, dated by weekday, newest first', () => {
-  const ns = A.notes('Database Team', T(9, 12, 0));
+  const ns = A.notes('Platform Team', T(9, 12, 0));
   assert.deepStrictEqual(ns.map((n) => `${n.date} ${n.time} ${n.action ? 'A' : '-'}`), ['2026-10-09 08:05 -', '2026-10-08 14:10 A', '2026-10-08 09:55 -', '2026-10-07 06:46 -']);
   assert.strictEqual(ns[1].text, 'Action item: call Phillip\nabout VCLIPRD');
   vault.setRoot(VAULT);
@@ -324,8 +324,8 @@ test('OKF project: notes() reads the week files back, dated by weekday, newest f
 const SHR = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-shared-'));
 const putS = (rel, text) => { fs.mkdirSync(path.dirname(path.join(SHR, rel)), { recursive: true }); fs.writeFileSync(path.join(SHR, rel), text); };
 const readS = (rel) => fs.readFileSync(path.join(SHR, rel), 'utf8');
-for (const d of ['Raw', 'Records', 'Sessions']) fs.mkdirSync(path.join(SHR, 'Lumen/Database Team', d), { recursive: true });
-putS('Lumen/README.md', '# Lumen\n');
+for (const d of ['Raw', 'Records', 'Sessions']) fs.mkdirSync(path.join(SHR, 'Acme/Platform Team', d), { recursive: true });
+putS('Acme/README.md', '# Acme\n');
 putS('Gamma/README.md', '# Gamma\n');
 putS('agent-os/inbox/index.md', '# Inbox\n');
 // the same register as the tests above left it, minus item 3 (its section and its table row)
@@ -340,7 +340,7 @@ test('shared register: a plain project\'s action item goes into the one register
   assert.strictEqual(r.action.num, 3);
   assert.strictEqual(r.action.file, REG);
   assert.strictEqual(r.action.origin, 'Gamma');
-  assert.strictEqual(r.action.project, 'Database Team', 'the register\'s own project owns the item');
+  assert.strictEqual(r.action.project, 'Platform Team', 'the register\'s own project owns the item');
   assert.ok(!fs.existsSync(path.join(SHR, 'Gamma/action-items.md')), 'no second file is made');
   const t = readS(REG);
   assert.match(t, /^## 3 — send the Gamma plan `\[OPEN\]`$/m);
@@ -357,16 +357,16 @@ test('shared register: the Inbox files there too, and an item with no Project li
   assert.ok(!fs.existsSync(path.join(SHR, 'agent-os/inbox/action-items.md')));
   const items = A.list().items.filter((i) => i.register);
   assert.strictEqual(items.length, 4);
-  assert.strictEqual(items.find((i) => i.num === 2).origin, 'Database Team'); // older item: no Project line
+  assert.strictEqual(items.find((i) => i.num === 2).origin, 'Platform Team'); // older item: no Project line
   assert.strictEqual(items.find((i) => i.num === 3).origin, 'Gamma');
 });
 
 test('shared register: close, reopen and update work through the owning project, and keep the Project line', () => {
   const raw = `register:${REG}#3`;
-  A.close('Database Team', raw);
+  A.close('Platform Team', raw);
   assert.match(readS(REG), new RegExp(`^## 3 — send the Gamma plan \`\\[CLOSED ${todayTag}\\]\`$`, 'm'));
-  A.reopen('Database Team', raw);
-  A.update('Database Team', raw, 'Draft sent.');
+  A.reopen('Platform Team', raw);
+  A.update('Platform Team', raw, 'Draft sent.');
   const t = readS(REG);
   assert.match(t, /^\*\*Project\.\*\* Gamma$/m);
   assert.match(t, /Draft sent\./);

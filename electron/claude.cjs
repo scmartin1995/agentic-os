@@ -94,7 +94,7 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const EXACT_ID = /^[A-Za-z0-9][\w.:/@-]{2,120}$/;
 const pinnedModel = (pick) => (PICKABLE[pick] ? PICKABLE[pick] : pick);
 // Through a gateway a pin is the exact id of a listed model, one of the plain tier names the picker offers when the gateway has no
-// list to read (Bedrock), or any other name the user typed, which goes through as typed (the gateway says if it does not know it).
+// list to read, or any other name the user typed, which goes through as typed (the gateway says if it does not know it).
 // Family words a gateway cannot be asked for by name (fable, or haiku/sonnet/opus beside a real list) are not pins. A direct account
 // takes a family word or a typed Claude id.
 const TIERS = new Set(['haiku', 'sonnet', 'opus']);
@@ -315,20 +315,18 @@ function loadKey() {
   return settings.getSecret('key:claude') || settings.envOr('ANTHROPIC_API_KEY') || null;
 }
 
-// The organisation's gateway, when one is set up: an address and a key (or, for a Bedrock-style gateway, an address
-// alone). null means Claude Code talks to Anthropic with a key or the user's own sign-in.
+// The organisation's gateway, when one is set up: an address and a key. null means Claude Code talks to Anthropic with
+// a key or the user's own sign-in.
 function gatewayCfg() {
   const p = settings.get('provider');
   if (p.id !== 'claude' || p.method !== 'key') return null;
   const baseUrl = String(p.baseUrl || '').trim().replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(baseUrl)) return null;
   const g = p.gateway || {};
-  const style = g.style === 'bedrock' ? 'bedrock' : 'anthropic';
   const key = settings.getSecret('key:claude') || settings.envOr('ANTHROPIC_API_KEY') || '';
   const headers = settings.getSecret('headers:claude');
-  if (!key && !(style === 'bedrock' && (headers || baseUrl))) return null;
-  return { baseUrl, key, keyHeader: p.keyHeader === 'x-api-key' ? 'x-api-key' : 'bearer', style, headers, disableBetas: !!g.disableBetas, certFile: g.certFile || '', models: p.models || {},
-    keyVar: g.keyVar || 'ANTHROPIC_AUTH_TOKEN', skipAuth: g.skipAuth !== false, region: g.region || '', extraEnv: g.extraEnv || {}, modelOverrides: g.modelOverrides || {} };
+  if (!key) return null;
+  return { baseUrl, key, keyHeader: p.keyHeader === 'x-api-key' ? 'x-api-key' : 'bearer', headers, disableBetas: !!g.disableBetas, certFile: g.certFile || '', models: p.models || {} };
 }
 
 const mode = () => (gatewayCfg() || loadKey() ? 'api' : 'plan');
@@ -360,14 +358,10 @@ function engineHome() {
 
 // Settings handed to the engine itself (not environment variables).
 // skipWebFetchPreflight: a web fetch must not first ask Anthropic whether the site is allowed. A work network may block that, and Agentic OS sends nothing to Anthropic that the user did not choose.
-const engineSettings = (extra = {}) => {
-  const g = gatewayCfg();
-  // Bedrock gateways often map one Claude version to the company's own inference profile (an ARN); Claude Code reads that map from its settings.
-  return { skipWebFetchPreflight: true, ...(g && g.style === 'bedrock' && Object.keys(g.modelOverrides).length ? { modelOverrides: g.modelOverrides } : {}), ...extra };
-};
+const engineSettings = (extra = {}) => ({ skipWebFetchPreflight: true, ...extra });
 
 // Which model name is handed to Claude Code. Normally the exact Claude version. Through a gateway the names the user pinned
-// (an Amazon Bedrock inference-profile name, say) only apply to the three plain names haiku, sonnet and opus, so those are used
+// (the gateway's own model names) only apply to the three plain names haiku, sonnet and opus, so those are used
 // instead, and a tier with no pinned name falls back to sonnet rather than asking for a model the account may not have.
 // The helpers: scouts ask for haiku. Through a gateway with no quick model pinned, there may be no haiku to ask for, so they use sonnet.
 function helperDefs() {
@@ -403,7 +397,7 @@ async function refreshGatewayModels(force = false) {
     const res = await fetch(g.baseUrl + '/v1/models?limit=1000', { headers: h, signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error('the gateway answered ' + res.status);
     const body = await res.json();
-    const list = (Array.isArray(body) ? body : body.data || body.models || []).map((m) => String(m.id || m.name || '')).filter((id) => /claude|anthropic/i.test(id)); // also catches Bedrock-style names such as us.anthropic.claude-sonnet-4-6
+    const list = (Array.isArray(body) ? body : body.data || body.models || []).map((m) => String(m.id || m.name || '')).filter((id) => /claude|anthropic/i.test(id)); // gateways list model ids in their own shapes
     gatewayModels.ids = [...new Set(list)].sort(); gatewayModels.error = '';
   } catch (err) { gatewayModels.error = String((err && err.message) || err); }
   gatewayModels.at = Date.now();

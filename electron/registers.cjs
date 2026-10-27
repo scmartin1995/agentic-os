@@ -1,5 +1,5 @@
 // Action-item registers: any vault note whose frontmatter says `concept_class: action-item` (for example
-// Lumen/Database Team/Records/actionitem-register.md). Reads the numbered sections (`## N — Title `[OPEN]``) and the
+// Acme/Platform Team/Records/actionitem-register.md). Reads the numbered sections (`## N — Title `[OPEN]``) and the
 // "Where the items stand" table, and writes back only the changes the register's own rules allow: a dated line
 // appended to an item's Updates, the status tag flipped in the heading and the table, the open/closed sentence
 // recounted, and as_of bumped. Carried over from the Oct 6 build; actions.cjs is the only caller.

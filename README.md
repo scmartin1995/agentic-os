@@ -29,26 +29,22 @@ folder (Agentic OS looks through it first, then asks how to keep it).
 
 ## Connect it
 
-Settings > Brain (or the second setup step). Three ways:
+Settings > Brain (or the second setup step). The simplest way is your own Claude subscription:
 
-- **Gateway (what most organisations hand out):** choose "Gateway or key".
+- **Your own Claude plan:** choose "My Claude plan". Claude Code's own sign-in opens in a terminal window; Agentic OS
+  never sees or stores the login, it only asks afterwards whether you are signed in.
+- **Anthropic API key:** choose "Gateway or key", leave the address empty and paste the key.
+- **A gateway (an address and a key from an organisation):** choose "Gateway or key".
   - If Claude Code is already set up on this PC, press **Use my Claude Code settings**. Agentic OS reads the `env`
     block of `~/.claude/settings.json` (it never changes that file), shows what it found (never the key), and
     takes over the address, the key, extra headers, model pins and switches when you press "Use these".
   - Or paste the gateway address and the key you were given and press "Check and save". Agentic OS works out
     which header the gateway reads the key from and reads the gateway's list of Claude models.
-  - **Advanced** (under the key): whether the gateway speaks the Anthropic format or Amazon Bedrock's format, extra
-    headers if the gateway's owner asked for one, "My gateway rejects some requests" (for errors like "Extra inputs
-    are not permitted"), and a certificate file for company networks.
+  - **Advanced** (under the key): extra headers if the gateway's owner asked for one, "My gateway rejects some requests"
+    (for errors like "Extra inputs are not permitted"), and a certificate file for company networks.
   - If it fails, the message says which of these it is (address not reachable, certificate not trusted, key refused,
     request shape rejected) and what to ask the gateway's owner for.
-- **Amazon Bedrock through a gateway:** under Advanced choose "Amazon Bedrock format", say whether the key is a gateway
-  token or an Amazon Bedrock API key (`AWS_BEARER_TOKEN_BEDROCK`), add the AWS region if you were given one, and type the
-  model names the gateway's owner gave you (they look like `us.anthropic.claude-sonnet-4-6`, or the full ARN of your
-  company's own profile). "Use my Claude Code settings" takes all of this over when it is already set up. Agentic OS never
-  signs in to AWS itself: no AWS profile, access keys or SSO. The gateway holds those.
-- **Anthropic API key:** leave the address empty and paste the key.
-- **Your own Claude plan:** "My Claude plan", signed in through Claude Code.
+  - Only gateways that speak Anthropic's own API format are supported.
 
 ## What leaves the machine
 
@@ -86,8 +82,8 @@ the settings passed to the engine. It has not yet been checked by watching the n
 
 In setup (and in Settings, Notes folder) Agentic OS can **look** at the chosen folder (`electron/discover.cjs`: file names and the
 first lines of notes, nothing written, no AI) and report what it found, including a warning for names that look like
-passwords or keys. The look runs only when the user presses "Look through it", and "Skip this" stops waiting for it: on the
-IBM laptop it once kept setup waiting well past its 15 second limit (8 Oct 2026). The same look is a chat tool,
+passwords or keys. The look runs only when the user presses "Look through it", and "Skip this" stops waiting for it: on a
+work laptop it once kept setup waiting well past its 15 second limit (8 Oct 2026). The same look is a chat tool,
 `look_through_folder` ("look through my folder"): the model gets the short report and explains it. Agentic OS explains OKF (a header on each note, an index page per folder, a log) and why (the model reads the
 index pages first, so it reads less and costs less), and asks how the notes should be kept:
 
@@ -119,17 +115,16 @@ npm run test:wire
 npm run test:window
 ```
 
-- `test:wire` starts the real Claude Code engine against a stand-in gateway (both the Amazon Bedrock and the Anthropic format)
-  and checks what it actually sends: the pinned model name, the key as a bearer token, nothing signed with AWS, no Claude login
-  token, no startup probes.
+- `test:wire` starts the real Claude Code engine against a stand-in gateway and checks what it actually sends: the pinned
+  model name, the key as a bearer token, no Claude login token.
 - `test:window` opens Agentic OS in a hidden window as a Windows computer and as a Mac, and checks where the three window buttons
   sit and that maximise, restore, minimise and close each work.
 
 ## Known gaps
 
-- **Direct AWS sign-in is not supported** (an AWS profile, access keys, SSO, or a command that refreshes the login). Only a
-  gateway with a key.
-- **Not run against a real gateway.** The gateway sign-in is tested against stand-in servers only (both formats, the settings import and each error). Which format a given company gateway speaks is not known until it is tried.
+- **Only gateways in Anthropic's own API format.** Cloud-provider formats and direct cloud sign-ins are not supported: use
+  your Claude plan, an Anthropic key, or an Anthropic-format gateway.
+- **Not run against a real gateway.** The gateway sign-in is tested against stand-in servers only (the settings import and each error).
 - **Never shown on a visible window.** Every run so far used a hidden window. A real question was asked through the
   Claude plan sign-in in one, and it answered, opened a file and ran an ask-first card. The reporting-off switches are
   checked on the engine's settings, not on the network.
@@ -139,7 +134,7 @@ npm run test:window
 - **Windows is the main build.** A Mac build exists as a separate package (it leaves out Mail and dictation, which need Windows). To start on Windows, open a terminal in this folder and run `npm install` (first time only), then `npm start`. Needs Node 20 or newer from nodejs.org.
 - **Text only in v1.** The microphone, "Hey computer", spoken answers and the voice settings are out of every screen. The old voice code
   is still in `electron/` (unused) so it can come back later.
-- **No usage or cost meters in v1.** How a gateway (Amazon Bedrock) reports cost is not known yet, so the Tokens screen, the title-bar
+- **No usage or cost meters in v1.** How a gateway reports cost is not known yet, so the Tokens screen, the title-bar
   numbers and the spending budget are out. The ledger still records usage in the background; the Value screen is unchanged.
 - **Starter skills and the manifest are added to whatever folder is chosen** (setup, step Files), without overwriting
   anything. If the folder already has a `.claude-plugin/plugin.json` with another name, the skills may not load; setup says so.
@@ -177,6 +172,6 @@ npm run test:window
   first lines of every note; in a OneDrive (or Dropbox, Google Drive, iCloud, Box) folder a file that cannot be fetched blocked the read
   for good and froze the window. Now the scan runs on a background thread and always answers within 15 seconds; in a cloud-synced
   folder it reads names, sizes and index pages only and does not open notes; elsewhere it opens the start of at most 600 notes. If it
-  is cut short it says so, and shows only what it counted. Found on the IBM laptop; the cause was confirmed by the assistant's own diagnosis
+  is cut short it says so, and shows only what it counted. Found on a work laptop; the cause was confirmed by the assistant's own diagnosis
   (a stuck read with no CPU use).
 - Index and README pages are no longer listed as deliverables. Borders on inputs and buttons are stronger. Settings no longer mentions the file tree.

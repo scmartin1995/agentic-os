@@ -13,7 +13,7 @@ export default function WorkersSetup() {
   return (
     <>
       <label className="lab" style={{ maxWidth: 520 }}>Gateway address for other models
-        <input className="field mono" value={base} onChange={(e) => setBase(e.target.value)} onBlur={saveBase} placeholder="https://api.servicesessentials.ibm.com/v1" spellCheck={false} />
+        <input className="field mono" value={base} onChange={(e) => setBase(e.target.value)} onBlur={saveBase} placeholder="https://your-gateway.example.com/v1" spellCheck={false} />
         <span className="small muted">Shared by every worker below. The Brain keeps its own address.</span>
       </label>
       {st.items.map((w) => <WorkerCard key={w.id} w={w} base={base.trim() || st.baseUrl} encrypted={st.encrypted} onChanged={load} />)}

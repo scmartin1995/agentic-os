@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CliStatus, GatewayStyle, ImportFound, Method, Models, ProvidersState } from '../types';
+import type { CliStatus, ImportFound, Method, Models, ProvidersState } from '../types';
 
 // Connecting Agentic OS to Claude. Used by onboarding and by Settings > Brain. Two ways in:
 //   - your Claude plan: Claude Code's own sign-in opens in a terminal window; this app never sees the login, it only
@@ -114,20 +114,17 @@ function GatewayOrKey({ st, onSaved, onNotReady }: { st: ProvidersState; onSaved
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const hasSaved = cur.key.saved && cur.method === 'key';
-  // Gateway extras: which format the gateway speaks, extra headers, a switch for gateways that reject some requests, a certificate file.
-  const [style, setStyle] = useState<GatewayStyle>(cur.gateway.style || 'anthropic');
+  // Gateway extras: extra headers, a switch for gateways that reject some requests, a certificate file.
   const [headers, setHeaders] = useState('');
   const [betas, setBetas] = useState(!!cur.gateway.disableBetas);
   const [cert, setCert] = useState(cur.gateway.certFile || '');
-  const [region, setRegion] = useState(cur.gateway.region || '');
-  const [keyKind, setKeyKind] = useState<'token' | 'bedrock-key'>(cur.gateway.keyKind || 'token');
-  const [open, setOpen] = useState(!!(cur.gateway.headerNames.length || cur.gateway.disableBetas || cur.gateway.certFile || cur.gateway.style === 'bedrock'));
-  const gwOpts = { gateway: { style, disableBetas: betas, certFile: cert.trim(), region: region.trim(), keyVar: keyKind === 'bedrock-key' ? 'AWS_BEARER_TOKEN_BEDROCK' : 'ANTHROPIC_AUTH_TOKEN', ...(headers.trim() ? { headers } : {}) } };
+  const [open, setOpen] = useState(!!(cur.gateway.headerNames.length || cur.gateway.disableBetas || cur.gateway.certFile));
+  const gwOpts = { gateway: { disableBetas: betas, certFile: cert.trim(), ...(headers.trim() ? { headers } : {}) } };
   useEffect(() => { if (!(cur.method === 'key' && cur.key.saved)) onNotReady(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const test = async () => {
     setBusy(true); setMsg(null);
-    const r = await window.aos.providers.test({ id: 'claude', key: key.trim(), baseUrl: base.trim(), style, disableBetas: betas, model: pick.standard || pick.light || pick.strong || undefined, ...(headers.trim() ? { headers } : {}) });
+    const r = await window.aos.providers.test({ id: 'claude', key: key.trim(), baseUrl: base.trim(), disableBetas: betas, model: pick.standard || pick.light || pick.strong || undefined, ...(headers.trim() ? { headers } : {}) });
     setBusy(false);
     if (!r.ok) { setMsg({ ok: false, text: r.error || 'That did not work.' }); return; }
     const list = r.models || [];
@@ -157,28 +154,8 @@ function GatewayOrKey({ st, onSaved, onNotReady }: { st: ProvidersState; onSaved
         </span>
       </label>
       <details className="adv" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-        <summary>Advanced: format, extra headers, certificate</summary>
+        <summary>Advanced: extra headers, certificate</summary>
         <div className="adv-body">
-          <label className="lab">What the gateway speaks
-            <select className="field" value={style} onChange={(e) => setStyle(e.target.value as GatewayStyle)}>
-              <option value="anthropic">Anthropic format (most gateways)</option>
-              <option value="bedrock">Amazon Bedrock format</option>
-            </select>
-            {style === 'bedrock' && <span className="small muted">A Bedrock-style gateway has no model list, so choose models in the picker under the chat box (Auto, or type the exact name). Agentic OS does not sign in to AWS: the gateway holds the cloud credentials.</span>}
-          </label>
-          {style === 'bedrock' && (
-            <>
-              <label className="lab">The key you were given is
-                <select className="field" value={keyKind} onChange={(e) => setKeyKind(e.target.value as 'token' | 'bedrock-key')}>
-                  <option value="token">A token for the gateway (sent as a bearer token)</option>
-                  <option value="bedrock-key">An Amazon Bedrock API key</option>
-                </select>
-              </label>
-              <label className="lab">AWS region (only if you were given one)
-                <input className="field mono" value={region} onChange={(e) => setRegion(e.target.value)} placeholder="us-east-1" spellCheck={false} />
-              </label>
-            </>
-          )}
           <label className="lab">Extra headers{cur.gateway.headerNames.length ? ` (saved: ${cur.gateway.headerNames.join(', ')}; type here to replace them)` : ''}
             <textarea className="field mono" rows={2} value={headers} onChange={(e) => setHeaders(e.target.value)} placeholder={'X-Org-Route: prod'} spellCheck={false} />
             <span className="small muted">One per line, as Name: Value. Only if the gateway's owner asked for one. Not for the key.</span>
@@ -194,7 +171,7 @@ function GatewayOrKey({ st, onSaved, onNotReady }: { st: ProvidersState; onSaved
         </div>
       </details>
       <div className="setting-actions">
-        <button className="cta" onClick={test} disabled={busy || (!key.trim() && !hasSaved && !(style === 'bedrock' && base.trim()))}>{busy ? 'Checking…' : key.trim() || !hasSaved ? 'Check and save' : 'Check the saved key'}</button>
+        <button className="cta" onClick={test} disabled={busy || (!key.trim() && !hasSaved)}>{busy ? 'Checking…' : key.trim() || !hasSaved ? 'Check and save' : 'Check the saved key'}</button>
         <span className="small muted">Checked with a free call, then saved {st.encrypted ? 'encrypted on this PC' : 'on this PC'}. It is only ever sent to {base.trim() ? 'that address' : 'Anthropic'}.</span>
       </div>
       {msg && <div className={`status-line ${msg.ok ? 'good' : 'off'}`}><i className="dot" />{msg.text}</div>}
@@ -234,13 +211,11 @@ function ImportPanel({ onApplied }: { onApplied(label: string): void }) {
         <div className="found">
           <b>Found in your Claude Code settings</b>
           <ul>
-            <li>Address: <span className="mono">{found.baseUrl || '(none: Anthropic directly)'}</span> · {found.style === 'bedrock' ? 'Amazon Bedrock format' : 'Anthropic format'}</li>
+            <li>Address: <span className="mono">{found.baseUrl || '(none: Anthropic directly)'}</span></li>
             <li>Key: {found.keyFrom ? `found in ${found.keyFrom} (not shown)` : 'none found'}</li>
             {found.headerNames.length > 0 && <li>Extra headers: {found.headerNames.join(', ')}</li>}
             {(found.models.light || found.models.standard || found.models.strong) && <li>Models: {[found.models.light && `quick ${found.models.light}`, found.models.standard && `everyday ${found.models.standard}`, found.models.strong && `hard ${found.models.strong}`].filter(Boolean).join(' · ')}</li>}
-            {found.region && <li>AWS region: {found.region}</li>}
             {found.switches.length > 0 && <li>Switches: {found.switches.join(', ')}</li>}
-            {found.extras.length > 0 && <li>Also taking over: {found.extras.join(', ')}</li>}
           </ul>
           {found.notes.map((n) => <div key={n} className="notice">{n}</div>)}
           <div className="setting-actions">

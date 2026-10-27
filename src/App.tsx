@@ -276,7 +276,7 @@ export default function App() {
   useEffect(() => window.aos.brain.onEvent((e: BrainEvent) => {
     if (e.type === 'brainChanged') { loadBrain(); return; }
     const cid = e.chat || chatId.current;
-    if (e.type === 'limits' && !e.chat) return; // the launch check (usage meters are out until Bedrock costs are understood)
+    if (e.type === 'limits' && !e.chat) return; // the launch check (usage meters are out until gateway costs are understood)
     if (!(cid in storeRef.current)) return; // a chat this screen doesn't have open (another screen's, or forgotten)
     const here = cid === chatId.current; // events from other chats land in their own chat, quietly
     const setIt = (f: (xs: ChatItem[]) => ChatItem[]) => upd(cid, (s) => ({ items: f(s.items) }));

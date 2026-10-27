@@ -10,7 +10,7 @@ const DIR = require('./paths.cjs').toolsDir('whisper');
 const CLI = path.join(DIR, 'Release', 'whisper-cli.exe');
 const MODEL = path.join(DIR, 'ggml-small.en.bin');
 // Words Whisper wouldn't guess on its own; it leans toward these spellings.
-const VOCAB = 'Agentic OS, SYSGEN, IDC, DBA, Oracle, Lumen, Jira, ServiceNow, SNOW, SailPoint, CMS, TPO, AWS, Azure, GCP, notes, project, session, deliverable.';
+const VOCAB = 'Agentic OS, notes, project, session, deliverable, skill, action item, Jira, ServiceNow, AWS, Azure, GCP.';
 
 const haveWhisper = () => fs.existsSync(CLI) && fs.existsSync(MODEL);
 const available = () => haveWhisper() || process.platform === 'win32';

@@ -268,7 +268,7 @@ const atest = async (name, fn) => { try { await fn(); passed++; console.log('ok 
     assert.strictEqual(a.verdict, 'structured');
     const plain = await discover.scanAsync(messy());
     assert.strictEqual(plain.headersSkipped, undefined);
-    for (const p of ['C:\\Users\\x\\OneDrive - IBM\\Desktop\\notes', 'C:\\Users\\x\\Dropbox\\notes', '/Users/x/Library/CloudStorage/GoogleDrive-a@b.com/My Drive', '/Users/x/Library/Mobile Documents/iCloud Drive/notes']) assert.ok(discover.isCloudPath(p), p);
+    for (const p of ['C:\\Users\\x\\OneDrive - Contoso\\Desktop\\notes', 'C:\\Users\\x\\Dropbox\\notes', '/Users/x/Library/CloudStorage/GoogleDrive-a@b.com/My Drive', '/Users/x/Library/Mobile Documents/iCloud Drive/notes']) assert.ok(discover.isCloudPath(p), p);
     assert.ok(!discover.isCloudPath('C:\\Users\\x\\Documents\\Notes'));
   });
   console.log('\n' + passed + ' passed');

@@ -8,7 +8,7 @@ The learn, lessons-review and skill-tidy skills were rewritten from skills and p
 | learn | Hermes `agent/learn_prompt.py` | Nous Research |
 | lessons-review | Hermes `agent/background_review.py` | Nous Research |
 | skill-tidy | Hermes `agent/curator.py` | Nous Research |
-| vault-health-check | Hermes `llm-wiki` skill, lint step | Nous Research |
+| okf (the health-check section) | Hermes `llm-wiki` skill, lint step | Nous Research |
 
 ## MIT License
 

@@ -23,7 +23,8 @@ export interface FileContent {
 }
 
 // Menu tools (electron/vault.cjs skills() and projects()).
-export interface SkillInfo { name: string; title: string; description: string; tags: string[]; pinned: boolean; path: string; group: string }
+// headless: the skill says it can run on its own (`headless: true` in its header), so it gets a Run button.
+export interface SkillInfo { name: string; title: string; description: string; tags: string[]; pinned: boolean; headless: boolean; path: string; group: string }
 export interface ProjectFile { name: string; path: string; kind: FileKind; sub: string; modified?: number; created?: number }
 // What a file is for, as the Projects panel shows it. auto is what its folder makes it; type is that unless corrected.
 export type FileType = 'deliverable' | 'note' | 'record' | 'evidence' | 'working' | 'raw';

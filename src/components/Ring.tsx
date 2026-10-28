@@ -11,10 +11,8 @@ const WIDGETS_KEY = 'aos-ring-widgets';
 let topZ = 10; // z-index of the front-most widget; stays under the tooltip
 const AREA_ORDER = ['Records', 'Sessions', 'Client Facing', 'Tools', 'Input', 'Raw', 'Skills', 'General'];
 const AREA_OF = new Map([['Records', 'Records'], ['Sessions', 'Sessions'], ['Client Facing', 'Client Facing'], ['Tools', 'Tools'], ['Input', 'Input'], ['Raw', 'Raw'], ['skills', 'Skills']]);
-const RUNS = [
-  { skill: 'idc-dashboard-refresh', label: 'IDC dashboard refresh' },
-  { skill: 'dba-portal-comparison', label: 'DBA portal comparison' },
-];
+// The Run widget lists the skills whose header says `headless: true` (see the headless-candidates skill).
+type Runnable = { skill: string; label: string };
 
 type WId = 'recent' | 'mail' | 'run' | 'acts' | 'legend';
 // Every widget snaps to the nearest corner (c: tl/tr/bl/br) when dropped, and stays anchored there when the window is resized or
@@ -217,6 +215,10 @@ export default function Ring({ covered, onOpen, onTool }: Props) {
   const loadMail = useCallback(() => { if (os === 'mac') return; window.aos.mail.state().then(setMail).catch(() => {}); }, []);
   const [, tick] = useState(0); // re-renders each minute so "Last pull 5 min ago" keeps counting
   useEffect(() => { const t = setInterval(() => { tick((n) => n + 1); loadMail(); }, 60_000); return () => clearInterval(t); }, [loadMail]);
+  const [runs, setRuns] = useState<Runnable[]>([]);
+  const loadRunnable = useCallback(() => {
+    window.aos.vault.skills().then((r) => setRuns(r.groups.flatMap((g) => g.skills).filter((s) => s.headless).map((s) => ({ skill: s.name, label: s.title })))).catch(() => {});
+  }, []);
   const loadRuns = useCallback(() => {
     window.aos.skillRun.state().then((s) => setRunning(s.map((x) => x.skill))).catch(() => {});
     window.aos.skillRun.recent(20).then((rs) => {
@@ -227,9 +229,9 @@ export default function Ring({ covered, onOpen, onTool }: Props) {
   }, []);
 
   useEffect(() => {
-    loadProjects(); loadActs(); loadMail(); loadRuns();
+    loadProjects(); loadActs(); loadMail(); loadRuns(); loadRunnable();
     const offs = [
-      window.aos.vault.onChanged(() => { loadProjects(); loadActs(); }),
+      window.aos.vault.onChanged(() => { loadProjects(); loadActs(); loadRunnable(); }),
       window.aos.mail.onEvent(() => loadMail()),
       window.aos.skillRun.onEvent((e) => {
         if (e.type === 'start') setRunning((r) => (r.includes(e.skill) ? r : [...r, e.skill]));
@@ -240,7 +242,7 @@ export default function Ring({ covered, onOpen, onTool }: Props) {
       }),
     ];
     return () => offs.forEach((off) => off());
-  }, [loadProjects, loadActs, loadMail, loadRuns]);
+  }, [loadProjects, loadActs, loadMail, loadRuns, loadRunnable]);
 
   const runSkill = (skill: string) => { window.aos.skillRun.run(skill, 'sonnet').catch(() => {}).finally(loadRuns); };
   const stopSkill = (skill: string) => { window.aos.skillRun.stop(skill).catch(() => {}).finally(loadRuns); };
@@ -297,7 +299,8 @@ export default function Ring({ covered, onOpen, onTool }: Props) {
           </Panel>}
 
           <Panel id="run" cls="ring-w3" title="Run" pos={pos} setPos={setPos} box={boxRef}>
-            {RUNS.map((r) => {
+            {runs.length === 0 && <div className="ring-run"><span className="t">No skill is marked to run on its own<small>Ask for the headless-candidates skill to pick some</small></span></div>}
+            {runs.map((r) => {
               const busy = running.includes(r.skill), l = last[r.skill];
               return (
                 <div className="ring-run" key={r.skill}>

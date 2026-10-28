@@ -106,7 +106,7 @@ export default function NotesSetup({ onReady }: { onReady?(ok: boolean, notes: n
           </button>
         ))}
       </div>
-      <p className="ns-fine">Either way, Agentic OS installs four learning skills in this folder (learn, lessons review, skill tidy and model selection). After every tenth question in a chat it quietly reviews what the chat taught and saves it as a skill. They are plain files you can read or delete. If the folder already has a skills folder, yours are kept and only missing ones are added.</p>
+      <p className="ns-fine">Either way, Agentic OS installs six starter skills in this folder: four learning skills (learn, lessons review, skill tidy and model selection), okf (how the notes are kept, with a health check) and headless-candidates (which skills can run on their own from the home page). After every tenth question in a chat it quietly reviews what the chat taught and saves it as a skill. They are plain files you can read or delete. If the folder already has a skills folder, yours are kept and only missing ones are added.</p>
       {err && <p className="ns-err">{err}</p>}
       <div className="setting-actions">
         <button className="cta" onClick={apply} disabled={phase === 'applying'}>{phase === 'applying' ? 'Setting up…' : 'Apply this choice'}</button>

@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import type { SkillInfo } from '../types';
 import aos from '../aos';
 
-// Skills that have a Run button: jobs that repeat and need nothing from the user once started.
-const RUNNABLE = new Set(['idc-dashboard-refresh', 'dba-portal-comparison']);
+// Skills with `headless: true` in their header get a Run button: jobs that repeat and need nothing from the user once started
+// (the headless-candidates skill works out which those are).
 type Past = { at: string; skill: string; model: string; ok: boolean; secs: number; note: string };
 type Live = { skill: string; since: number };
 
@@ -77,7 +77,7 @@ export default function Skills({ onClose, onOpen, embedded }: { onClose(): void;
                         <span className="small desc">{s.description}</span>
                         {s.tags.length > 0 && <span className="tags">{s.tags.map((t) => <i key={t} className="mono">{t}</i>)}</span>}
                       </button>
-                      {RUNNABLE.has(s.name) && (busy(s.name)
+                      {s.headless && (busy(s.name)
                         ? <button className="ghost small" onClick={() => aos.skillRun.stop(s.name)}>Running… stop</button>
                         : <button className="ghost small" onClick={() => run(s.name)} title="Runs this skill start to finish with no chat; the result shows under Recent runs">▶ Run</button>)}
                     </div>

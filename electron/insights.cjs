@@ -18,7 +18,7 @@ const BEHIND_DAYS = 7;
 
 // Starting guesses for minutes saved per use, by skill. The user edits them in the Value panel.
 const MINUTES = {
-  'client-email-draft': 20, 'vault-health-check': 30, 'lessons-review': 5, 'grill-me': 20, 'weekly-review': 30,
+  'client-email-draft': 20, 'okf': 30, 'lessons-review': 5, 'grill-me': 20, 'weekly-review': 30,
   'systematic-debugging': 20, 'one-three-one': 10, spike: 30, learn: 15, 'skill-tidy': 15, 'model-selection': 1,
 };
 const DEFAULT_MINUTES = 10;

@@ -239,7 +239,7 @@ function skills() {
     const text = readText(rel);
     if (!text) continue;
     const fm = frontmatter(text);
-    list.push({ name: fm.name || e.name, title: fm.title || e.name, description: fm.description || '', tags: Array.isArray(fm.tags) ? fm.tags : [], pinned: fm.pinned === 'true', path: rel, group: group.get(e.name) || 'Other' });
+    list.push({ name: fm.name || e.name, title: fm.title || e.name, description: fm.description || '', tags: Array.isArray(fm.tags) ? fm.tags : [], pinned: fm.pinned === 'true', headless: fm.headless === 'true', path: rel, group: group.get(e.name) || 'Other' });
   }
   const order = [...new Set([...group.values(), 'Other'])];
   const groups = order.map((g) => ({ name: g, skills: list.filter((s) => s.group === g).sort((a, b) => a.name.localeCompare(b.name)) })).filter((g) => g.skills.length);

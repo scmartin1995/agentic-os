@@ -6,7 +6,7 @@
 menu above the file list (it says `mac`), pick `main`, then Code > Download ZIP. Or `git clone <repo address>` with no
 branch named. Same features in both; this branch adds the Mac packaging, start script and Mac-only safety rules.
 
-Version 1.1.1. A light desktop workspace for working with Claude: chat, your notes and projects (each project's deliverables
+Version 1.1.2. A light desktop workspace for working with Claude: chat, your notes and projects (each project's deliverables
 as tiles), and skills that improve with use. Calm paper colours (light, with a warm dark), IBM Plex type, and nothing
 moving on screen unless the assistant is working.
 
@@ -152,6 +152,11 @@ npm run test:window
   that file. A note that starts with "action item:" is added to its project's register.
 - **Skills:** the five starter skills (learn, lessons review, skill tidy, model selection, vault health check) are copied into the
   chosen folder at setup and load as the plugin `aos`.
+
+## What changed in 1.1.2
+
+- **Run buttons come from the skill.** A skill whose header says `headless: true` gets the Run button on the home page and the Skills page; the fixed list of two skill names is gone. If a skill used to have a button, add that line to its header.
+- **Starter skills** installed into a notes folder are now learn, lessons-review, skill-tidy, model-selection, **okf** (how the notes are kept, with the health check folded in; vault-health-check is no longer a separate skill) and **headless-candidates** (works out which skills can run on their own and marks them).
 
 ## What changed in 1.1.0
 

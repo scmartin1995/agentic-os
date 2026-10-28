@@ -1,6 +1,6 @@
 {
   "name": "agentic-os",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "Agentic OS: a light desktop workspace for working with an AI assistant, in IBM Carbon colours.",
   "main": "electron/main.cjs",
